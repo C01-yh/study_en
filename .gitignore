@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+audio-cache/
+data/ecdict.csv
+data/dictionary.sqlite3
+*.log
+.DS_Store

@@ -1,0 +1,21 @@
+{
+  "source": "ECDICT",
+  "url": "https://github.com/skywind3000/ECDICT",
+  "license": "MIT",
+  "dictionaryCount": 770611,
+  "coreCount": 6000,
+  "sha256": "1a6947e04785db63613a92e14903cdae7954f7e84860b10e68e5c7cbb3f9c3cf",
+  "selection": "按 ECDICT 的 frq/bnc 较小正数排序，筛选有中文释义的英文词；不是 CEFR 官方等级。",
+  "examCounts": {
+    "zk": 1603,
+    "gk": 3677,
+    "cet4": 3849,
+    "cet6": 5407,
+    "ky": 4801,
+    "ielts": 5040,
+    "toefl": 6974,
+    "gre": 7504
+  },
+  "examUniqueCount": 14942,
+  "examNote": "按 ECDICT 原有考试标签完整导出；不同词库可以重叠，不代表最新官方考试大纲。"
+}

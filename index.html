@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f7f8f2">
+  <title>一点英语 · 从第一句话开始</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="#" aria-label="一点英语首页"><span class="brand-mark">a<span>·</span></span><span>一点英语<small>A LITTLE, EVERY DAY</small></span></a>
+    <div class="workspace-label">我的学习空间</div>
+    <nav aria-label="主导航">
+      <button class="nav-item active" data-view="home"><span>◒</span> 今日学习</button>
+      <button class="nav-item" data-view="words"><span>▤</span> 我的单词本 <b id="word-badge">0</b></button>
+      <button class="nav-item" data-view="library"><span>▦</span> 分类词库</button>
+      <button class="nav-item" data-view="path"><span>⌁</span> 全部课程</button>
+      <button class="nav-item" data-view="grammar"><span>✎</span> 语法练习</button>
+      <button class="nav-item" data-view="speaking"><span>♪</span> 开口说英语</button>
+      <button class="nav-item" data-view="listening"><span>♫</span> 听力理解</button>
+      <button class="nav-item" data-view="reading"><span>▥</span> 阅读与生词</button>
+      <button class="nav-item" data-view="dictionary"><span>⌕</span> 完整词典</button>
+      <button class="nav-item" data-view="settings"><span>⚙</span> 学习设置</button>
+    </nav>
+    <div class="sidebar-note"><span class="small-spark">✳</span><p>不用一口气走很远。<br>每天进步一点就好。</p><span>从零开始，也很好。</span></div>
+    <div class="profile"><span class="avatar">初</span><div>初学者<small>零基础 · 正在出发</small></div><span class="profile-dot"></span></div>
+  </aside>
+
+  <main>
+    <header class="topbar"><div><span class="breadcrumb">我的学习空间</span><span class="slash">/</span><span id="page-name">今日学习</span></div><span class="date" id="today-date"></span></header>
+    <section id="home-view" class="view">
+      <div class="page-heading"><div class="eyebrow">SMALL STEPS, REAL PROGRESS</div><h1>你的第一句英语，从这里开始<span>。</span></h1><p>每天留一点时间给自己，让英语一点点成为习惯。</p></div>
+      <div class="dashboard-grid">
+        <div class="primary-column">
+          <section class="hero-card">
+            <div class="hero-content"><span class="pill"><i></i> 零基础 → 日常表达</span><h2>一杯水，<br>也是一个开始。</h2><p><span id="hero-description">正在载入你的学习计划…</span></p><button class="button primary" id="start-lesson">开始今天的学习 <span>↗</span></button><div class="hero-meta"><span>◷ 每天 20～30 分钟</span><span>不需要任何基础</span></div></div>
+            <div class="water-art" aria-hidden="true"><span class="art-spark one">✳</span><span class="art-spark two">✧</span><span class="art-dot"></span><div class="orbit"></div><div class="glass"><div class="water"><div class="wave"></div></div><span class="glass-shine"></span></div><div class="glass-shadow"></div><div class="water-label">water <span>/ˈwɔːtər/</span><small>水</small></div><span class="art-caption">A LITTLE SIP. A LITTLE STEP.</span></div>
+          </section>
+          <section class="journey-section"><div class="section-title"><h2>今天的小目标</h2><span>一步一步，慢慢来</span></div><div class="steps-grid"><div class="step-card"><span class="step-number">01</span><span class="step-icon green">Aa</span><h3>认识单词</h3><p>按你的进度，安排今天的新词</p><span class="step-foot">从意思和声音开始</span></div><div class="step-card"><span class="step-number">02</span><span class="step-icon orange">▦</span><h3>动手练一练</h3><p>选意思，再试着拼出来</p><span class="step-foot">答错也没关系</span></div><div class="step-card"><span class="step-number">03</span><span class="step-icon purple">“ ”</span><h3>把词用起来</h3><p>把学到的单词连成一句话</p><span class="step-foot">听一句，再自己说一句</span></div></div></section>
+          <section class="word-preview"><div class="section-title"><h2>今天会遇见的单词 <span class="count-label" id="preview-count">载入中</span></h2><button class="text-button" data-view="words">打开单词本 ↗</button></div><div class="preview-list" id="word-preview-list"></div><p class="quiet-note">点击单词，默认慢速朗读。听清楚了，再跟着读。</p></section>
+          <div class="voice-settings"><label for="voice-select">朗读声音</label><select id="voice-select"><option value="jenny">Jenny · 美式女声</option><option value="sonia">Sonia · 英式女声</option><option value="device">设备声音 · 离线备用</option></select><button class="text-button" data-speak="I want water, please.">♪ 试听</button><p id="voice-note">自然女声首次播放需要网络，生成后本地缓存。</p></div>
+          <p id="active-collection" class="active-collection"></p><div class="daily-actions"><button class="button secondary" id="review-due">复习到期单词</button><button class="text-button" id="alphabet-start">先认识 26 个字母 →</button></div>
+          <div id="load-error" class="feedback retry" hidden></div>
+        </div>
+        <aside class="right-column">
+          <section class="progress-card"><div class="section-title"><h2>我的小小积累</h2><span>✦</span></div><div class="progress-ring" id="progress-ring"><div><strong id="practice-count">0</strong><span id="daily-progress-label">今天的新词目标</span></div></div><div class="stats"><div><strong id="study-days">0<small> 天</small></strong><span>累计学习</span></div><div><strong id="review-count">0<small> 次</small></strong><span>完成复习</span></div></div><div class="gentle-note" id="progress-note">今天，是很好的第一天 🌱</div></section>
+          <section class="week-card"><div class="section-title"><h2>这周，和自己约好</h2><span id="week-total">0 / 7</span></div><div class="week-days" id="week-days"></div><p>亮起一个小圆点，就是一次进步。</p></section>
+          <section class="tip-card"><span class="tip-title">✳ 给刚出发的你</span><h3>先会用，再慢慢记。</h3><p>不必等背完单词才开口。<br>今天学的，今天就用一句。</p><div class="tip-line"></div><span>一点英语，一点勇气。</span></section>
+        </aside>
+      </div>
+      <footer id="library-summary">正在读取完整词库…</footer>
+    </section>
+    <section id="words-view" class="view" hidden><div class="page-heading"><div class="eyebrow">YOUR LITTLE COLLECTION</div><h1>认识的词，慢慢变熟悉。</h1><p>到期先复习，答错多见面。练过一次不等于记住。连续在 3 个不同的后续学习日独立通过，才标记为“跨天独立记住”；仍需定期复习。</p></div><div class="filter-bar"><input id="word-search" type="search" placeholder="搜索已学单词或中文" aria-label="搜索单词本"><select id="word-filter" aria-label="筛选单词"><option value="learned">全部已学</option><option value="due">到期复习</option><option value="mistakes">需要加强</option><option value="stable">跨天独立记住</option></select><button class="button primary" id="book-review">开始复习</button></div><div id="wordbook-content"></div><div class="pagination" id="word-pagination"></div></section>
+    <section id="library-view" class="view" hidden>
+      <div class="page-heading"><div class="eyebrow">CHOOSE YOUR WORD COLLECTION</div><h1>选一本词库，看见每一步。</h1><p>从生活英语到考试词汇，所有学习词都可以浏览。不同词库里的同一个词，共用学习进度。</p></div>
+      <div class="collection-toolbar"><label for="collection-select">选择词库</label><select id="collection-select"></select><button class="button secondary" id="set-collection">设为每日学习词库</button><button class="button primary" id="learn-collection">开始学习本词库 ↗</button></div>
+      <div id="collection-shortcuts" class="collection-shortcuts"></div>
+      <div id="collection-stats" class="collection-stats" aria-live="polite"></div>
+      <div class="collection-progress"><div id="collection-progress-bar"></div></div><p id="collection-progress-label" class="quiet-note"></p>
+      <div class="filter-bar"><input id="library-search" type="search" placeholder="搜索英语或中文释义" aria-label="搜索当前词库"><select id="library-filter" aria-label="按学习状态筛选"><option value="all">全部单词</option><option value="new">尚未学习</option><option value="learned">所有已学</option><option value="due">到期复习</option><option value="mistakes">需要加强</option><option value="stable">跨天独立记住</option></select></div>
+      <div class="library-legend"><span>○ 未学</span><span class="legend-learned">✓ 已学</span><span class="legend-due">◷ 到期复习</span><span class="legend-mistakes">↻ 需要加强</span><span id="library-result-count" role="status"></span></div>
+      <div id="library-grid" class="book-grid"></div><div id="library-pagination" class="pagination"></div>
+      <p class="source-note">考试分类来自 ECDICT 原有标签，并非最新官方考试大纲。不同词库有重叠，分类数量不能直接相加。“全部学习词库”列出常用词、考试词和自选词；77 万余完整词典词条仍可在「完整词典」查看。</p>
+    </section>
+    <section id="path-view" class="view" hidden><div class="page-heading"><div class="eyebrow">YOUR COMPLETE WORD LIBRARY</div><h1>课程备好了，按你的节奏走。</h1><p id="course-description">生活主题之后，继续学习常用词。所有课程都可以直接进入。</p></div><div class="filter-bar"><input id="course-search" type="search" placeholder="搜索课程或英语单词" aria-label="搜索课程"><select id="course-filter" aria-label="课程类型"><option value="topics">生活主题</option><option value="core">常用词拓展</option></select></div><div id="course-grid" class="course-grid"></div><div class="pagination" id="course-pagination"></div></section>
+    <section id="grammar-view" class="view" hidden><div class="page-heading"><div class="eyebrow">WORDS BECOME SENTENCES</div><h1>让单词，成为你想说的话。</h1><p>24 节课：从句子结构到从句、虚拟语气、倒装与论证表达。完成前面的课程后，依次解锁后续阶段。</p></div><div class="filter-bar"><label for="grammar-level">阶段</label><select id="grammar-level" class="stage-filter"></select><span id="grammar-count"></span></div><div id="grammar-advice" class="feedback"></div><div id="grammar-grid" class="course-grid"></div></section>
+    <section id="speaking-view" class="view" hidden><div class="page-heading"><div class="eyebrow">A LITTLE COURAGE</div><h1>先听一句，再说一句。</h1><p>24 个生活与讨论场景，其中 16 个支持对话练习。先跟读，再尝试自己回答；录音仅供自我对照，不自动评分。</p></div><div class="filter-bar"><label for="speaking-level">阶段</label><select id="speaking-level" class="stage-filter"></select><span id="speaking-count"></span></div><div id="speaking-grid" class="course-grid"></div></section>
+    <section id="listening-view" class="view" hidden><div class="page-heading"><div class="eyebrow">LISTEN AND UNDERSTAND</div><h1>从听懂一句，到理解观点。</h1><p>16 组分级听力，与阅读短文配套。先分句听，再回答；可按需查看原文和中文。</p></div><div class="filter-bar"><label for="listening-level">阶段</label><select id="listening-level" class="stage-filter"></select><span id="listening-count"></span></div><div id="listening-grid" class="course-grid"></div></section>
+    <section id="reading-view" class="view" hidden><div class="page-heading"><div class="eyebrow">READ A LITTLE, REMEMBER MORE</div><h1>读一小段，收好新单词。</h1><p>点击短文中的任意单词查看释义和发音。收藏只是记录，完成学习后才进入复习。</p></div><div class="filter-bar"><label for="reading-level">阅读难度</label><select id="reading-level"><option value="all">全部级别</option><option>入门</option><option>基础</option><option>中级</option><option>高级</option></select><button class="button secondary" id="open-reading-notebook">阅读生词本</button></div><p id="reading-summary" class="quiet-note"></p><details class="reading-sources"><summary>题型参考与官方样题</summary><p>本站短文与题目为原创练习，并非官方真题。训练目标参考常见阅读考试题型，阶段不等同于官方考试等级。</p><p><a href="https://ielts.org/take-a-test/test-types/ielts-academic-test/ielts-academic-format-reading" target="_blank" rel="noreferrer">IELTS 官方阅读题型</a> · <a href="https://www.ielts.org/take-a-test/preparation-resources/sample-test-questions/academic-test" target="_blank" rel="noreferrer">IELTS 官方样题</a> · <a href="https://www.cambridgeenglish.org/Images/180429-cambridge-english-b2-first-reading-part-5.pdf" target="_blank" rel="noreferrer">Cambridge B2 First 官方阅读练习</a></p></details><div id="reading-list" class="course-grid"></div><div id="reading-article"></div><div id="reading-notebook"></div></section>
+    <dialog id="reading-word-dialog" aria-labelledby="reading-word-title"><div class="lesson-header"><span>短文查词</span><button class="text-button" id="close-reading-word" aria-label="关闭查词">关闭 ×</button></div><div id="reading-word-content" class="lesson-body"></div></dialog>
+    <section id="dictionary-view" class="view" hidden><div class="page-heading"><div class="eyebrow">LOOK UP ANY TIME</div><h1>一整本词典，随时查。</h1><p id="dictionary-description">英语支持前缀查询，中文支持释义查询。词典还收录短语、词形和专业词条。</p></div><form id="dictionary-form" class="filter-bar"><input id="dictionary-query" type="search" placeholder="输入英语或中文，例如 apple / 苹果" aria-label="查词"><button class="button primary">搜索词典</button></form><div id="dictionary-status" role="status"></div><div id="dictionary-results" class="book-grid"></div><div id="dictionary-pagination" class="pagination"></div></section>
+    <section id="settings-view" class="view" hidden><div class="page-heading"><div class="eyebrow">YOUR OWN PACE</div><h1>按自己的节奏学。</h1><p>设置和学习进度保存在当前浏览器。定期导出备份，换设备时可以恢复。</p></div><div class="settings-grid"><article class="settings-card"><h2>每天学习多少新词？</h2><label for="daily-target">每日新词目标</label><select id="daily-target"><option value="5">5 个 · 零基础起步</option><option value="10">10 个 · 逐渐加量</option><option value="15">15 个 · 有一些基础</option></select><p>先复习最多 10 个到期词，再学新词。20～30 分钟是建议安排，不是掌握保证。</p></article><article class="settings-card"><h2>声音和试听</h2><label for="settings-voice">选择声音</label><select id="settings-voice"><option value="jenny">Jenny · 美式女声</option><option value="sonia">Sonia · 英式女声</option><option value="device">设备声音 · 离线备用</option></select><button class="button secondary" data-speak="Hello. Take your time. Let's learn English together.">听听这个声音 ♪</button><p>默认使用 Jenny，语速适当放慢。首次生成需要联网，播放过的音频会缓存。网络失败时会提示，不会悄悄换回旧声音。</p></article><article class="settings-card"><h2>备份学习记录</h2><button class="button primary" id="export-progress">导出备份</button><label class="file-label" for="import-progress">选择备份文件恢复</label><input type="file" id="import-progress" accept="application/json,.json"><div id="import-preview" hidden></div><p>恢复会先显示备份摘要，再由你确认；原记录也会自动备份在本地。</p></article><article class="settings-card"><h2>学习统计</h2><div id="settings-stats"></div><p>复习间隔为 1、3、7、14、30 天；答错后缩短间隔。同一天反复答对不会提升记忆阶段。</p></article></div><p class="source-note">词典来源：<a href="https://github.com/skywind3000/ECDICT" target="_blank" rel="noreferrer">ECDICT</a> · <a href="data/ECDICT-LICENSE.txt" target="_blank">MIT 许可证</a>。常用词按来源词频筛选，不是官方 CEFR 等级。自然语音通过 edge-tts 连接在线服务。</p></section>
+  </main>
+
+  <dialog id="lesson-dialog" aria-labelledby="lesson-title"><div class="lesson-header"><span class="lesson-brand">✳ 一点英语 <span id="lesson-mode">第一句话</span></span><button class="close-button" id="close-lesson" aria-label="退出练习">×</button></div><div class="lesson-progress"><div id="lesson-progress-bar"></div></div><div id="lesson-content"></div></dialog>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
