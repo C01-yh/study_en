@@ -1,185 +1,165 @@
-// End-to-end check with an isolated Chrome profile; no npm dependencies.
-const {spawn}=require('node:child_process');
-const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),assert=require('node:assert/strict');
-const debugPort=9400+Math.floor(Math.random()*1000);
-const profile=fs.mkdtempSync(path.join(os.tmpdir(),'study-en-check-'));
-const chrome=spawn(process.env.CHROME_PATH||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',['--headless=new','--no-first-run','--no-proxy-server','--no-default-browser-check','--use-fake-ui-for-media-stream','--use-fake-device-for-media-stream',`--remote-debugging-port=${debugPort}`,`--user-data-dir=${profile}`,'about:blank'],{stdio:'ignore'});
-const delay=ms=>new Promise(r=>setTimeout(r,ms));
-(async()=>{
- let tabs;for(let i=0;i<60;i++){try{tabs=await(await fetch(`http://127.0.0.1:${debugPort}/json`)).json();break;}catch{await delay(200);}}if(!tabs)throw Error('Chrome did not start');
- const ws=new WebSocket(tabs.find(tab=>tab.type==='page').webSocketDebuggerUrl);await new Promise((r,j)=>{ws.onopen=r;ws.onerror=j;});
- let id=0;const pending=new Map(),errors=[];
- ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.id){const p=pending.get(m.id);pending.delete(m.id);m.error?p.reject(m.error):p.resolve(m.result);}if(m.method==='Runtime.exceptionThrown')errors.push(m.params.exceptionDetails);};
- const send=(method,params={})=>new Promise((resolve,reject)=>{const n=++id;pending.set(n,{resolve,reject});ws.send(JSON.stringify({id:n,method,params}));});
- const evaluate=async expression=>{const r=await send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true,userGesture:true});if(r.exceptionDetails)throw Error(JSON.stringify(r.exceptionDetails));return r.result.value;};
- const wait=async expression=>{for(let i=0;i<100;i++){if(await evaluate(expression))return;await delay(100);}console.log("DIAGNOSTIC",await evaluate("({url:location.href,body:document.body?.innerText.slice(-2000)})"),errors);throw Error(`Timed out: ${expression}`);};
- const click=selector=>evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`);
- const submitAnswer=async value=>evaluate(`(()=>{const fields=[...document.querySelectorAll('[data-blank]')];const parts=[...${JSON.stringify(value)}.replace(/[^a-z]/gi,'')];fields.forEach((field,i)=>{if(field.isConnected&&!field.readOnly){field.value=parts[i]||'';field.dispatchEvent(new Event('input',{bubbles:true}));}});})()`);
- const state=()=>evaluate("JSON.parse(localStorage.getItem('a-little-english-v2'))");
- const ready=()=>wait("document.querySelector('#library-summary')?.textContent.includes('770,611')");
- await send('Browser.grantPermissions',{origin:'http://127.0.0.1:5173',permissions:['audioCapture']});await send('Runtime.enable');await send('Page.enable');await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1100,deviceScaleFactor:1,mobile:false});
- await send('Page.navigate',{url:'http://127.0.0.1:5173'});await ready();
- await evaluate("localStorage.removeItem('a-little-english-v2');localStorage.setItem('a-little-english-v1',JSON.stringify({completed:true,dates:['2026-09-20'],lastPractice:'2026-09-20',reviews:1}));location.reload()");await delay(300);await ready();
- assert.equal(Object.keys((await state()).cards).length,3);
- await evaluate("localStorage.removeItem('a-little-english-v1');localStorage.removeItem('a-little-english-v2');location.reload()");await delay(300);await ready();
- fs.writeFileSync(path.join(os.tmpdir(),'study-en-v2-desktop.png'),Buffer.from((await send('Page.captureScreenshot',{format:'png'})).data,'base64'));
- await click('#start-lesson');await click('#next-step');await click('#close-lesson');await evaluate('location.reload()');await delay(300);await ready();await click('#start-lesson');assert.equal((await state()).session.index,1);
- let madeMistake=false;
- async function finishExercises(injectMistake=false){
-  for(let i=0;i<120;i++){
-   if(await evaluate("!!document.querySelector('#finish-lesson')"))return;
-   const saved=await state(),step=saved.session.steps[saved.session.index];
-   if(step.type==='choice'){
-    if(injectMistake&&!madeMistake){await click(`[data-option="${step.options.findIndex(o=>o!==step.answer)}"]`);assert.equal(await evaluate("document.querySelector('#next-step').hidden"),true);madeMistake=true;}
-    await click(`[data-option="${step.options.indexOf(step.answer)}"]`);
-   }else if(['gap','sentence-gap','spell','listen'].includes(step.type))await submitAnswer(step.answer);
-   else await click('#next-step');
-  }console.log('LESSON DIAGNOSTIC',await state(),errors);throw Error('Lesson never finished');
- }
- await finishExercises(true);assert.equal(Object.keys((await state()).cards).length,5);assert.equal((await state()).cards.i.mistakes,1);await click('#finish-lesson');
- await click('[data-view="home"]');assert((await evaluate("document.querySelector('#start-lesson').textContent")).includes('今日目标完成'));
- await click('[data-view="path"]');assert.equal(await evaluate("document.querySelectorAll('#course-grid .course-card').length"),12);
- await evaluate("document.querySelector('#course-filter').value='core';document.querySelector('#course-filter').dispatchEvent(new Event('change'))");assert((await evaluate("document.querySelector('#course-pagination').textContent")).includes('586'));
- await click('[data-course="core-0"]');assert((await state()).session.wordKeys.length>0);await click('#close-lesson');
- await click('[data-view="grammar"]');await click('[data-course="grammar-1"]');await click('#replace-session');await finishExercises();await click('#finish-lesson');assert((await state()).grammar.includes('grammar-1'));
- await click('[data-view="speaking"]');await click('[data-course="scene-1"]');await click('#record-button');await wait("document.querySelector('#record-status').textContent.includes('正在录音')");await delay(300);await click('#record-button');await wait("!document.querySelector('#record-playback').hidden");await finishExercises();await click('#finish-lesson');assert((await state()).scenes.includes('scene-1'));
- await click('[data-view="dictionary"]');await evaluate("document.querySelector('#dictionary-query').value='apple';document.querySelector('#dictionary-form').requestSubmit()");await wait("document.querySelector('#dictionary-results')?.textContent.includes('苹果')");assert((await evaluate("document.querySelector('#dictionary-status').textContent")).includes('找到'));
- await click('[data-add-word="0"]');await finishExercises();await click('#finish-lesson');assert(Object.keys((await state()).cards).length>=6);
- await click('[data-view="settings"]');await evaluate("document.querySelector('#daily-target').value='10';document.querySelector('#daily-target').dispatchEvent(new Event('change'))");assert.equal((await state()).settings.daily,10);
- const audioResponse=await fetch('http://127.0.0.1:5173/api/audio?text=I&voice=jenny&speed=normal');assert.equal(audioResponse.status,200);assert.equal(audioResponse.headers.get('content-type'),'audio/mpeg');assert((await audioResponse.arrayBuffer()).byteLength>1000);
- for(const width of [390,320]){await send('Emulation.setDeviceMetricsOverride',{width,height:844,deviceScaleFactor:1,mobile:true});for(const view of ['home','words','library','path','grammar','speaking','reading','listening','dictionary','settings']){await click(`[data-view="${view}"]`);assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true,`Overflow: ${view} ${width}`);}}
- await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});await click('[data-view="home"]');fs.writeFileSync(path.join(os.tmpdir(),'study-en-v2-mobile.png'),Buffer.from((await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:true})).data,'base64'));
- // An old saved lesson must gain phonetics and the new gap step without losing its place.
- await evaluate("const s=JSON.parse(localStorage.getItem('a-little-english-v2'));s.session={kind:'words',title:'补字母验证',wordKeys:['please'],wrong:[],firstTry:0,index:0,steps:[{type:'learn',word:'please',key:'please',meaning:'请',phonetic:''},{type:'spell',key:'please',title:'请',answer:'please'},{type:'spell',title:'我想要水。',answer:'I want water.'}]};localStorage.setItem('a-little-english-v2',JSON.stringify(s));location.reload()");await delay(300);await ready();await click('#start-lesson');
- assert.equal(await evaluate("document.querySelector('.word-phonetic').textContent"),'/pliːz/');assert.equal(await evaluate("getComputedStyle(document.querySelector('.word-meaning')).textAlign"),'center');
- fs.writeFileSync(path.join(os.tmpdir(),'study-en-word-card.png'),Buffer.from((await send('Page.captureScreenshot',{format:'png'})).data,'base64'));
- await click('#next-step');let gap=(await state()).session.steps[(await state()).session.index];assert.equal(gap.type,'gap');
- await submitAnswer('z');assert.equal(await evaluate("document.querySelector('#next-step').hidden"),true);
- fs.writeFileSync(path.join(os.tmpdir(),'study-en-letter-gap.png'),Buffer.from((await send('Page.captureScreenshot',{format:'png'})).data,'base64'));
- await submitAnswer(gap.answer);assert.equal(await evaluate("document.querySelector('#feedback').hidden"),true);
- gap=(await state()).session.steps[(await state()).session.index];assert.equal(gap.type,'gap');assert.equal(gap.answer.length,2);
- assert.equal(await evaluate("!!document.querySelector('#answer-input')||!!document.querySelector('#check-answer')"),false);
- await evaluate(`const field=document.querySelector('[data-blank="0"]');field.focus();field.value=${JSON.stringify(gap.answer[0])};field.dispatchEvent(new InputEvent('input',{bubbles:true,isComposing:true}));`);
- assert.equal(await evaluate("document.querySelectorAll('[data-blank][readonly]').length"),0);
- await evaluate("document.querySelector('[data-blank=\"0\"]').dispatchEvent(new CompositionEvent('compositionend',{bubbles:true}))");
- assert.equal(await evaluate("document.activeElement.dataset.blank"),'1');assert.equal(await evaluate("document.querySelectorAll('.blank-error').length"),0);
- await send('Input.insertText',{text:'z'});
- assert.equal(await evaluate("document.activeElement.getAttribute('aria-invalid')"),'true');assert.equal(await evaluate("document.activeElement.selectionEnd-document.activeElement.selectionStart"),1);
-assert.equal(await evaluate("document.querySelectorAll('[data-blank][readonly]').length"),1);assert.equal(await evaluate("document.querySelector('[data-blank=\"0\"]').value"),gap.answer[0]);
- const partialScore=(await state()).session.firstTry;
- fs.writeFileSync(path.join(os.tmpdir(),'study-en-inline-letters.png'),Buffer.from((await send('Page.captureScreenshot',{format:'png'})).data,'base64'));
- const beforeReload=await state();await click('#close-lesson');await evaluate('location.reload()');await delay(300);await ready();await click('#start-lesson');assert.equal((await state()).session.index,beforeReload.session.index);assert.equal((await state()).session.steps.length,beforeReload.session.steps.length);assert.equal(await evaluate("document.querySelectorAll('[data-blank][readonly]').length"),1);assert.equal((await state()).session.firstTry,partialScore);
- for(const count of [2,3]){const saved=await state(),current=saved.session.steps[saved.session.index];assert.equal(current.type,'gap');assert.equal(current.answer.length,count);if(count===3){await evaluate(`const clipboardData=new DataTransfer();clipboardData.setData('text',${JSON.stringify(current.answer)});document.querySelector('[data-blank]').dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData}));`);}else await submitAnswer(current.answer);assert.equal((await state()).session.index,saved.session.index+1);}
- assert.equal((await state()).session.steps[(await state()).session.index].type,'spell');await submitAnswer('please');
- for(const count of [1,2]){
-  const saved=await state(),current=saved.session.steps[saved.session.index],letters=current.answer.replace(/[^a-z]/gi,'').length;
-  assert.equal(current.type,'sentence-gap');assert.equal(current.missing.length,count);assert.equal(await evaluate("document.querySelectorAll('[data-blank]').length"),letters);assert.equal(await evaluate("[...document.querySelectorAll('[data-blank]')].every(x=>x.maxLength===1)"),true);
-  assert.equal(await evaluate("document.querySelector('.letter-sentence').getBoundingClientRect().bottom < document.querySelector('.gap-card .word-meaning').getBoundingClientRect().top"),true);
-  assert.equal(await evaluate("getComputedStyle(document.querySelector('[data-blank]')).backgroundColor"),'rgba(0, 0, 0, 0)');
-  if(count===2){await submitAnswer(current.missing[0]+' zzzzz');assert.equal(await evaluate("document.querySelectorAll('[data-blank][readonly]').length"),current.missing[0].length);await click('#close-lesson');await evaluate('location.reload()');await delay(300);await ready();await click('#start-lesson');assert.equal(await evaluate("document.querySelectorAll('[data-blank][readonly]').length"),current.missing[0].length);fs.writeFileSync(path.join(os.tmpdir(),'study-en-letter-sentence.png'),Buffer.from((await send('Page.captureScreenshot',{format:'png'})).data,'base64'));}
-  await submitAnswer('wrong');assert.equal(await evaluate("document.querySelector('#next-step').hidden"),true);await submitAnswer(current.answer);assert.equal((await state()).session.index,saved.session.index+1);
- }
- assert.equal((await state()).session.steps[(await state()).session.index].type,'spell');await finishExercises();await click('#finish-lesson');
- await click('[data-view="library"]');assert.equal(await evaluate("document.querySelector('.stat-0 strong').textContent"),'6,005');
- await evaluate("document.querySelector('#collection-select').value='cet4';document.querySelector('#collection-select').dispatchEvent(new Event('change'))");assert.equal(await evaluate("document.querySelector('.stat-0 strong').textContent"),'3,849');assert.equal(await evaluate("document.querySelectorAll('#library-grid .library-word').length"),24);
- await click('#library-pagination [data-page="2"]');assert((await evaluate("document.querySelector('#library-pagination').textContent")).includes('第 2'));
- const target=await evaluate("(async()=>{const e=await(await fetch('data/exams.json')).json();const s=JSON.parse(localStorage.getItem('a-little-english-v2'));return e.find(w=>w.tags.split(' ').includes('cet4')&&w.tags.split(' ').includes('cet6')&&!s.cards[w.word.toLowerCase()]&&/^[a-z]{4,}$/.test(w.word)).word})()");
- await evaluate(`document.querySelector('#library-search').value=${JSON.stringify(target)};document.querySelector('#library-search').dispatchEvent(new Event('input'))`);assert((await evaluate("document.querySelector('#library-pagination').textContent")).includes('第 1'));
- await click(`[data-study-word="${target}"]`);await finishExercises();await click('#finish-lesson');await click('[data-view="library"]');assert.equal(await evaluate(`document.querySelector('[data-study-word="${target}"]').closest('article').classList.contains('is-learned')`),true);
- await evaluate("document.querySelector('#collection-select').value='cet6';document.querySelector('#collection-select').dispatchEvent(new Event('change'))");assert.equal(await evaluate("document.querySelector('.stat-0 strong').textContent"),'5,407');assert.equal(await evaluate(`document.querySelector('[data-study-word="${target}"]').closest('article').classList.contains('is-learned')`),true);
- await click('#set-collection');assert.equal((await state()).settings.collection,'cet6');await evaluate('location.reload()');await delay(300);await ready();await click('[data-view="library"]');assert.equal(await evaluate("document.querySelector('#collection-select').value"),'cet6');
- await evaluate("document.querySelector('#library-filter').value='new';document.querySelector('#library-filter').dispatchEvent(new Event('change'))");assert.equal(await evaluate("document.querySelectorAll('#library-grid .is-learned').length"),0);
- await evaluate("document.querySelector('#library-filter').value='learned';document.querySelector('#library-filter').dispatchEvent(new Event('change'))");assert.equal(await evaluate("document.querySelectorAll('#library-grid .status-new').length"),0);
- await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1100,deviceScaleFactor:1,mobile:false});fs.writeFileSync(path.join(os.tmpdir(),'study-en-collections-desktop.png'),Buffer.from((await send('Page.captureScreenshot',{format:'png'})).data,'base64'));
- await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true);fs.writeFileSync(path.join(os.tmpdir(),'study-en-collections-mobile.png'),Buffer.from((await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:true})).data,'base64'));
- await click('[data-view="home"]');await click('#start-lesson');const assigned=(await state()).session;assert(assigned.wordKeys.length>0);assert.equal(await evaluate(`(async()=>{const e=await(await fetch('data/exams.json')).json();return ${JSON.stringify(assigned.wordKeys)}.every(k=>e.some(w=>w.word.toLowerCase()===k&&w.tags.split(' ').includes('cet6')))})()`),true);await click('#close-lesson');
- // Migrate a previously correct whole-word blank to individual letters without losing credit.
- await evaluate(`const s=JSON.parse(localStorage.getItem('a-little-english-v2'));s.session={kind:'grammar',id:'grammar-5',title:'逐字母句子验证',progressionVersion:2,index:0,firstTry:1,wrong:[],wordKeys:[],steps:[{type:'sentence-gap',title:'补一个单词',sentence:"I don't want water!",translation:'我不想要水！',parts:[{text:'I ',blank:false},{text:"don't",blank:true},{text:' want water!',blank:false}],missing:["don't"],answer:"don't",blankState:{values:["don't"],locked:[true],counted:true,submitted:true}},{type:'spell',title:'我不想要水！',answer:"I don't want water!"}]};localStorage.setItem('a-little-english-v2',JSON.stringify(s));location.reload()`);await delay(300);await ready();await click('#start-lesson');assert.equal((await state()).session.index,1);assert.equal((await state()).session.firstTry,1);assert.equal((await state()).session.steps[0].blankState.locked.filter(Boolean).length,4);
- assert.equal(await evaluate("document.querySelector('#lesson-title').textContent"),'写出完整句子');assert.equal(await evaluate("[...document.querySelectorAll('.fixed-punctuation')].map(x=>x.textContent).join('')"),"'!");assert.equal(await evaluate("document.querySelector('#answer-input')===null"),true);
- assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true);fs.writeFileSync(path.join(os.tmpdir(),'study-en-full-sentence-lines.png'),Buffer.from((await send('Page.captureScreenshot',{format:'png'})).data,'base64'));await finishExercises();assert.equal((await state()).session,null);
- // Adaptive widths, readable letter slots, and live resizing without losing answers.
- await click('#finish-lesson');
- await send('Emulation.setDeviceMetricsOverride',{width:1200,height:1050,deviceScaleFactor:1,mobile:false});
- const adaptiveSteps=[{type:'spell',title:'我想要水，谢谢。',answer:'I want water, please.'},{type:'spell',title:'每天我都喜欢和朋友一起学习英语。',answer:'I enjoy learning English with my friends every day.'},{type:'spell',key:'water',title:'水',answer:'water'}];
- await evaluate(`const s=JSON.parse(localStorage.getItem('a-little-english-v2'));s.session={kind:'grammar',id:'grammar-5',title:'自适应句子验证',progressionVersion:2,index:0,firstTry:0,wrong:[],wordKeys:[],steps:${JSON.stringify(adaptiveSteps)}};localStorage.setItem('a-little-english-v2',JSON.stringify(s));location.reload()`);await delay(300);await ready();await click('#start-lesson');await delay(100);
- const geometry=()=>evaluate(`(()=>{const d=document.querySelector('#lesson-dialog'),l=document.querySelector('.letter-sentence');return {width:d.getBoundingClientRect().width,font:parseFloat(getComputedStyle(l).fontSize),rows:new Set([...l.children].map(x=>Math.round(x.getBoundingClientRect().top))).size,overflow:d.scrollWidth>d.clientWidth,wordSplit:[...l.children].some(w=>Math.max(...[...w.children].map(c=>c.getBoundingClientRect().top))-Math.min(...[...w.children].map(c=>c.getBoundingClientRect().top))>parseFloat(getComputedStyle(l).fontSize))}})()`);
- let g=await geometry();assert(g.width>600);assert.equal(g.rows,1);assert.equal(g.overflow,false);
- fs.writeFileSync(path.join(os.tmpdir(),'study-en-adaptive-desktop.png'),Buffer.from((await send('Page.captureScreenshot',{format:'png'})).data,'base64'));
- await submitAnswer('Izzzzzzzzzzzzzzzz');assert.equal(await evaluate("document.querySelectorAll('[readonly][data-blank]').length"),1);
- for(const width of [390,320,768,1200]){await send('Emulation.setDeviceMetricsOverride',{width,height:1050,deviceScaleFactor:1,mobile:width<640});await delay(100);g=await geometry();assert(g.width<=width-28);assert(g.font>=22);assert.equal(g.overflow,false);assert.equal(g.wordSplit,false);assert.equal(await evaluate("document.querySelectorAll('[readonly][data-blank]').length"),1);}
- await submitAnswer(adaptiveSteps[0].answer);await delay(100);g=await geometry();assert(g.width>800&&g.width<=960);assert.equal(g.overflow,false);
- for(const width of [320,390,768,1200]){await send('Emulation.setDeviceMetricsOverride',{width,height:1050,deviceScaleFactor:1,mobile:width<640});await delay(100);g=await geometry();assert.equal(g.overflow,false);assert.equal(g.wordSplit,false);assert(g.font>=22);}
- await submitAnswer(adaptiveSteps[1].answer);await delay(100);assert.equal((await geometry()).width,600);await submitAnswer('water');assert.equal(await evaluate("document.querySelector('#lesson-dialog').style.width"),'');
- // Delayed audio preparation is shared with clicks, and abandoned playback stays silent.
- await click('#finish-lesson');
- await evaluate(`const s=JSON.parse(localStorage.getItem('a-little-english-v2'));s.settings.voice='jenny';s.session={kind:'alphabet',id:'alphabet',title:'语音预加载验证',progressionVersion:2,index:0,firstTry:0,wrong:[],wordKeys:[],steps:[{type:'letter',word:'Q',title:'Q'},{type:'letter',word:'Z',title:'Z'}]};localStorage.setItem('a-little-english-v2',JSON.stringify(s));location.reload()`);await delay(300);await ready();
- await evaluate(`(async()=>{window.audioFixture=await(await fetch('/api/audio?text=I&voice=jenny&speed=normal')).blob();window.audioRequests=[];window.audioReleases=[];window.playCalls=0;window.originalFetch=window.fetch;window.originalPlay=Audio.prototype.play;window.fetch=(url,options)=>String(url).startsWith('/api/audio?')?new Promise(resolve=>{audioRequests.push(String(url));audioReleases.push(()=>resolve(new Response(audioFixture)));}):originalFetch(url,options);Audio.prototype.play=function(){playCalls++;this.onplaying?.();return Promise.resolve();};})()`);
- await click('#start-lesson');await wait('audioRequests.length===2');assert.equal(await evaluate('playCalls'),0);
- await click('[data-speed="normal"]');assert.equal(await evaluate("document.querySelector('[data-speed=normal]').classList.contains('audio-loading')"),true);assert.equal(await evaluate("document.querySelector('[data-speed=normal]').classList.contains('playing')"),false);assert.equal(await evaluate('audioRequests.length'),2);
- await evaluate('audioReleases[0]()');await wait('playCalls===1');assert.equal(await evaluate("document.querySelector('[data-speed=normal]').classList.contains('playing')"),true);
- await click('[data-speed="normal"]');await wait('playCalls===2');assert.equal(await evaluate('audioRequests.length'),2);
- await click('[data-speed="slow"]');await click('#next-step');await evaluate('audioReleases[1]()');await delay(50);assert.equal(await evaluate('playCalls'),2);
- await click('#close-lesson');await evaluate('window.fetch=originalFetch;Audio.prototype.play=originalPlay');
- // Dictation hides the translation until a mistake, including across saved sessions.
- await evaluate(`const s=JSON.parse(localStorage.getItem('a-little-english-v2'));s.session={kind:'words',title:'听写提示验证',progressionVersion:2,index:0,firstTry:0,wrong:[],wordKeys:['water','please'],steps:[{type:'listen',title:'听声音，写出这个词。',answer:'water',key:'water'},{type:'listen',title:'听声音，写出这个词。',answer:'please',key:'please'},{type:'spell',title:'写出英语：水',answer:'water',key:'water'}]};localStorage.setItem('a-little-english-v2',JSON.stringify(s));location.reload()`);await delay(300);await ready();await click('#start-lesson');
- const hintVisible=()=>evaluate("getComputedStyle(document.querySelector('.gap-card .word-meaning')).display!=='none'");
- assert.equal(await hintVisible(),false);await submitAnswer('w');assert.equal(await hintVisible(),false);
- await click('#close-lesson');await evaluate('location.reload()');await delay(300);await ready();await click('#start-lesson');assert.equal(await hintVisible(),false);
- await submitAnswer('wz');assert.equal(await hintVisible(),true);assert.equal(await evaluate("document.querySelector('.gap-card .word-meaning').textContent"),'水');
- await click('#close-lesson');await evaluate('location.reload()');await delay(300);await ready();await click('#start-lesson');assert.equal(await hintVisible(),true);
- await submitAnswer('wa');assert.equal(await hintVisible(),true);await submitAnswer('water');assert.equal((await state()).session.index,1);assert.equal(await hintVisible(),false);
- await submitAnswer('please');assert.equal((await state()).session.index,2);assert.equal(await hintVisible(),true);await submitAnswer('water');assert.equal((await state()).session,null);
- // Independent reviews withhold letter feedback until the whole word is filled.
- await click('#finish-lesson');
- await evaluate(`const s=JSON.parse(localStorage.getItem('a-little-english-v2'));const d=new Date();d.setDate(d.getDate()-1);const yesterday=[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');for(const key of ['water','tea'])s.cards[key]={stage:0,added:yesterday,last:yesterday,due:yesterday,mistakes:0,lapses:0};s.session={kind:'words',memoryVersion:1,title:'独立复习验证',progressionVersion:2,index:0,firstTry:0,wrong:[],wordKeys:['water','tea'],steps:['water','tea'].map(key=>({type:'listen',title:'听声音，独立写出这个词。',answer:key,key,wholeAnswer:true,assessment:'review'}))};localStorage.setItem('a-little-english-v2',JSON.stringify(s));location.reload()`);await delay(300);await ready();await click('#start-lesson');
- await submitAnswer('z');assert.equal(await hintVisible(),false);assert.equal(await evaluate("document.querySelectorAll('.filled,.blank-error').length"),0);assert.equal((await state()).session.wrong.length,0);
- await click('#close-lesson');await evaluate('location.reload()');await delay(300);await ready();await click('#start-lesson');assert.equal(await hintVisible(),false);assert.equal(await evaluate("document.querySelector('[data-blank]').value"),'z');
- await submitAnswer('zater');assert.equal(await hintVisible(),true);assert.equal(await evaluate("document.querySelectorAll('[data-blank][readonly]').length"),4);assert.equal((await state()).session.steps[0].blankState.hintUsed,true);
- await submitAnswer('water');assert.equal((await state()).session.index,1);assert.equal(await hintVisible(),false);await submitAnswer('t');assert.equal(await evaluate("document.querySelectorAll('[data-blank][readonly]').length"),0);await submitAnswer('tea');assert.equal((await state()).session,null);
- let memory=(await state()).cards;assert.equal(memory.water.independentDays,0);assert.equal(memory.water.hintUses,1);assert.equal(memory.tea.independentDays,1);assert.equal(memory.tea.hintUses,0);
- await click('#finish-lesson');await click('[data-practice-word="tea"]');assert.equal((await state()).session.steps[0].wholeAnswer,true);await finishExercises();memory=(await state()).cards;assert.equal(memory.tea.independentDays,1);await click('#finish-lesson');
- // Graduated help, answer visibility, retry scheduling and assistance survive reload.
- await evaluate(`const s=JSON.parse(localStorage.getItem('a-little-english-v2'));s.session={kind:'words',title:'分层提示验证',progressionVersion:2,index:0,firstTry:0,wrong:[],wordKeys:['water'],steps:[{type:'listen',title:'听声音写单词',key:'water',answer:'water',wholeAnswer:true},{type:'letter',word:'A'},{type:'letter',word:'B'}]};localStorage.setItem('a-little-english-v2',JSON.stringify(s));location.reload()`);await delay(300);await ready();await click('#start-lesson');
- await submitAnswer('woter');assert.equal(await evaluate("document.querySelector('#feedback').textContent.includes('第 2 个')"),true);assert.equal(await evaluate("!!document.querySelector('#letter-hint')"),false);assert.equal(await evaluate("!!document.querySelector('#answer-help [data-speak]')"),true);
- await submitAnswer('woter');assert.equal(await evaluate("!!document.querySelector('#letter-hint')"),true);await click('#letter-hint');assert.equal(await evaluate("document.querySelector('.letter-hint').textContent.includes('a')"),true);assert.equal((await state()).session.steps[0].blankState.hintUsed,true);
- await click('#reveal-answer');assert.equal(await evaluate("document.querySelector('.answer-reveal strong').textContent"),'water');assert.equal((await state()).session.steps.length,4);assert.equal((await state()).session.steps[3].retry,true);
- await click('#close-lesson');await evaluate('location.reload()');await delay(300);await ready();await click('#start-lesson');assert.equal(await evaluate("!!document.querySelector('#hide-answer')"),true);assert.equal((await state()).session.steps.length,4);
- await click('#hide-answer');assert.equal(await evaluate("document.querySelectorAll('[data-blank][readonly]').length"),0);assert.equal(await evaluate("[...document.querySelectorAll('[data-blank]')].every(x=>x.value==='')"),true);
- await click('#reveal-answer');assert.equal((await state()).session.steps.length,4);await click('#hide-answer');await submitAnswer('water');assert.equal((await state()).session.index,1);await click('#next-step');await click('#next-step');assert.equal((await state()).session.steps[(await state()).session.index].retry,true);
- await click('#reveal-answer');assert.equal((await state()).session.steps.length,4);await click('#hide-answer');await submitAnswer('water');assert.equal((await state()).session,null);assert((await state()).cards.water.answerUses>=1);assert.equal((await state()).cards.water.independentDays,0);
- // Reading lookup, notebook persistence, comprehension, daily priority and role-play.
- await click('#finish-lesson');await click('[data-view="reading"]');assert.equal(await evaluate("document.querySelectorAll('[data-reading-open]').length"),16);await click('[data-reading-open="read-1"]');
- assert.equal(await evaluate("document.querySelectorAll('.reading-token').length"),26);
- await click('[data-reading-word="cup"]');await wait("!document.querySelector('#save-reading-word').disabled");assert.equal(await evaluate("document.querySelector('#reading-word-dialog').open"),true);assert.equal(await evaluate("document.querySelectorAll('#reading-word-content [data-speak]').length"),2);
- await click('#save-reading-word');await click('#save-reading-word');assert.equal((await state()).readingWords.filter(w=>w.word==='cup').length,1);assert.equal((await state()).cards.cup,undefined);await click('#close-reading-word');
- await click('[data-reading-question="0"][data-reading-option="1"]');assert.equal((await state()).readingProgress['read-1'].completed,null);await click('[data-reading-question="0"][data-reading-option="0"]');await click('[data-reading-question="1"][data-reading-option="1"]');assert((await state()).readingProgress['read-1'].completed);
- await evaluate('location.reload()');await delay(300);await ready();await click('[data-view="reading"]');assert.equal((await state()).readingWords.length,1);await click('[data-reading-open="read-1"]');assert.equal(await evaluate("document.querySelector('[data-reading-word=cup]').classList.contains('is-saved')"),true);
- for(const width of [320,390,1440]){await send('Emulation.setDeviceMetricsOverride',{width,height:1050,deviceScaleFactor:1,mobile:width<640});assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true);}
- await evaluate("document.querySelector('#reading-article').scrollIntoView()");await delay(150);fs.writeFileSync(path.join(os.tmpdir(),'study-en-reading-desktop.png'),Buffer.from((await send('Page.captureScreenshot',{format:'png'})).data,'base64'));
- await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});await click('[data-reading-word=water]');await wait("!document.querySelector('#save-reading-word').disabled");assert.equal(await evaluate("document.querySelector('#reading-word-dialog').scrollWidth<=document.querySelector('#reading-word-dialog').clientWidth"),true);fs.writeFileSync(path.join(os.tmpdir(),'study-en-reading-word-mobile.png'),Buffer.from((await send('Page.captureScreenshot',{format:'png'})).data,'base64'));await click('#close-reading-word');
- await click('#study-reading-words');assert((await state()).session.wordKeys.includes('cup'));await finishExercises();await click('#finish-lesson');assert((await state()).cards.cup);
- await click('[data-view="speaking"]');assert.equal(await evaluate("document.querySelectorAll('#speaking-grid article').length"),24);await click('[data-role-scene="scene-9"]');assert.equal(await evaluate("document.querySelector('.role-reference').open"),false);assert.equal((await state()).session.steps[0].partner,'When can we meet?');await click('.role-reference summary');assert.equal(await evaluate("document.querySelector('.role-reference').open"),true);await finishExercises();await click('#finish-lesson');assert((await state()).scenes.includes('scene-9'));
- // Every stage is directly selectable; complete advanced grammar and listening.
- for(const view of ['grammar','speaking','reading','listening']){await click(`[data-view="${view}"]`);for(const level of ['入门','基础','中级','高级']){await evaluate(`{const select=document.querySelector('#${view}-level');select.value=${JSON.stringify(level)};select.dispatchEvent(new Event('change'));}`);const selector=view==='reading'?'#reading-list':`#${view}-grid`;assert((await evaluate(`document.querySelectorAll('${selector} article').length`))>=4);assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true);}}
- await click('[data-view="grammar"]');await click('[data-course="grammar-19"]');await finishExercises();await click('#finish-lesson');assert((await state()).grammar.includes('grammar-19'));
- await click('[data-view="listening"]');await click('[data-listening-course="listen-13"]');assert.equal((await state()).session.kind,'listening');assert.equal(await evaluate("document.querySelector('.audio-passage details').open"),false);assert((await evaluate("document.querySelectorAll('.audio-passage [data-speak]').length"))>2);await finishExercises();await click('#finish-lesson');assert((await state()).listenings.includes('listen-13'));
- await evaluate('location.reload()');await delay(300);await ready();assert((await state()).listenings.includes('listen-13'));
- assert.deepEqual(errors,[]);console.log('PASS: letters validate on input without submit controls, composition waits until committed, wrong letters stay selected, paste validates automatically; correct answers advance automatically, completed saved blanks advance without duplicate credit, partial answers stay editable; individual letter underlines for all writing, fixed punctuation, Chinese below, old whole-word progress migration, inline letter/word inputs, locked partial answers persist after reload, no extra answer box, full exam counts, library pagination/search/filter, shared learned colors, persisted collection and daily assignment, progressive 1/2/alternating letter gaps, 1/multiple word sentence gaps, resume without duplicate stages, centered translation and phonetics, gap wrong/retry/reveal, legacy session upgrade, migration, new lesson, resume after reload, wrong-answer retry, daily limit, full course library, grammar completion, microphone recording/playback, speaking completion, dictionary search/add, settings, MP3 audio, 7 views at 390px and 320px; no runtime errors.');ws.close();chrome.kill();
-})().catch(e=>{console.error(e);chrome.kill();process.exitCode=1;});
+# 一点英语 · 从第一句话开始
 
-### 顺序解锁
+一个面向中文使用者的英语学习网站，从零基础单词练习逐步进入语法、阅读、听力和口语。项目在本机运行，学习进度保存在浏览器中，无需注册账号。
 
-语法、口语、阅读、听力各自按“入门 → 基础 → 中级 → 高级”推进，阶段内按课程顺序学习。完成当前课程后解锁下一课；完成前一阶段全部课程后解锁下一阶段。锁定卡片显示当前需先完成的课程，难度选择器显示各阶段完成数量。
+## 快速启动
 
-阅读要求本篇理解题全部答对；语法和听力要求完成本课练习；口语按完成跟读或对话练习记录解锁，不代表自动验证发音达标。词典、生词收藏及单词学习维持原功能。已完成的旧课程可复习，但不跳过其他未完成的前置课程；更新前已保存的未完成练习仍可继续。解锁直接依据现有完成记录，刷新及备份恢复后保留。
+需要安装 Python 3，并具备 `venv` 和 `pip`。日常使用不需要安装 Node.js，也不需要执行 `npm install`。
 
-### 阅读专项扩充
+在项目目录运行：
 
-阅读现为每阶段 8 篇，共 32 篇、86 道题。新增 16 篇、48 道原创专项题，覆盖通知规则、邮件目的、细节定位、时间顺序、指代、比较、主旨、推断、词义、作者态度、论证、信息判断（正确／错误／未提及）。新题展示技能标签，答题后给出原文依据，答对后展示中文解题思路。
+```bash
+python3 launch.py
+```
 
-设计参考 IELTS 官方阅读题型和 Cambridge B2 First 官方阅读训练目标；材料并非官方真题，也不是完整的标准化模拟考试。网页提供官方题型介绍和样题链接。没有对提分幅度作保证。原有点词、收藏、备份与解锁功能继续可用；旧完成记录保留，新题按所属阶段加入学习顺序。配套听力仍为原来的 16 组。
+Windows 可以使用：
 
-参考：
-- https://ielts.org/take-a-test/test-types/ielts-academic-test/ielts-academic-format-reading
-- https://www.ielts.org/take-a-test/preparation-resources/sample-test-questions/academic-test
-- https://www.cambridgeenglish.org/Images/180429-cambridge-english-b2-first-reading-part-5.pdf
+```powershell
+python launch.py
+```
+
+也可以双击启动脚本：
+
+- macOS：[启动英语学习.command](启动英语学习.command)
+- Windows：[启动英语学习.bat](启动英语学习.bat)
+
+启动后会自动打开 **http://127.0.0.1:5173**。保持启动终端运行；按 `Ctrl+C` 停止服务。
+
+首次启动会自动创建 `.venv`、安装语音依赖，并在缺少词典时下载约 63 MB 的 ECDICT 数据、生成本地数据库，需要联网。后续启动会复用已下载的文件。
+
+可选启动方式：
+
+```bash
+# 启动服务，但不自动打开浏览器
+python3 launch.py --no-browser
+
+# 默认端口被其他程序占用时，换一个端口
+python3 launch.py --port 5174
+```
+
+请通过启动脚本访问网站，不要直接打开 `index.html`，也不要使用 `python3 -m http.server` 代替项目服务；查词和自然语音依赖 Python 后端接口。
+
+## 当前内容
+
+| 模块 | 内容 |
+| --- | --- |
+| 单词学习 | 26 个字母、30 个生活主题、150 个入门词、常用 6,000 词及考试分类词库 |
+| 语法练习 | 24 节课、61 道选择题，另含句子补全与拼写练习 |
+| 阅读理解 | 32 篇短文、86 道理解题，每个阶段 8 篇 |
+| 听力理解 | 16 组配套听力、38 道理解题，原文默认折叠 |
+| 口语练习 | 24 个场景，其中 16 个支持角色对话 |
+| 完整词典 | 当前数据包含 770,611 个词条，支持英语和中文查询 |
+
+语法、阅读、听力、口语分为 **入门、基础、中级、高级**。这些是站内学习阶段，不是官方考试等级认证。
+
+### 单词与记忆练习
+
+- 每日新词目标可选 5、10 或 15 个，先安排到期复习词。
+- 新词按“认识 → 选择词义 → 补字母 → 完整拼写 → 听写”练习；一轮中有多个新词时，后面的听写与前面的学习之间隔着其他词。
+- 一个字母一条横线，空格与标点自动提供。入门练习逐字母判断；独立复习填完整个词后自动判断，不需要点击提交。
+- 正确字母保留，错误字母标橙并选中；整题正确后自动进入下一题。
+- 听写默认不显示中文，答错后才显示中文提示。
+- 反复出错时可以查看字母提示，也可以主动查看完整答案。收起答案后重新练习，并安排稍后再回忆一次。
+- 记录跨天独立通过、使用提示、查看答案和纠错情况。同一天重复答对不增加跨天通过次数。
+- 在 3 个不同的后续学习日独立通过后，标记为“跨天独立记住”；这不代表永久掌握，仍需复习。
+- 新词或答错后通常次日复习，独立通过后按 3、7、14、30 天推进；有帮助的练习不会延长复习间隔。
+
+### 阅读、查词与生词本
+
+短文中的每个英文单词都可以点击，查看释义、已有音标，以及慢速或正常发音。部分词提供人工补充的语境或词形说明，其余使用词典释义，尚未对所有词自动完成语境消歧。
+
+点击“记入阅读生词本”可保存词条和文章来源，重复收藏会去重。收藏不等于已经学会：生词可以逐个学习或每批最多学习 10 个，也会优先纳入每日新词安排；完成学习后使用原有复习机制。取消收藏不会删除已学进度。
+
+阅读覆盖细节、主旨、指代、词义、推断、作者态度、论证和“正确／错误／未提及”等训练。题目提供原文依据，新增专项题在答对后显示中文解析。短文和题目为原创练习，**不是官方真题**。
+
+### 听力与口语
+
+听力使用其中 16 篇阅读材料作为配套语料，支持分句慢速、正常播放及理解题；需要帮助时可展开原文和中文。
+
+口语支持示范跟读、录音回放，以及“听对方 → 自己回答 → 查看参考表达”的角色对话。录音仅在当前页面内用于自我对照，不上传，翻页后清除。目前没有自动语音识别、发音评分或自由对话评价。
+
+## 顺序解锁
+
+语法、口语、阅读和听力各自独立推进：
+
+1. 完成当前课程，解锁下一课。
+2. 完成当前阶段全部课程，解锁下一阶段。
+3. 已完成的课程可以随时复习；锁定课程会显示需要先完成哪一课。
+
+阅读以本篇理解题全部答对为完成条件；语法和听力以完成本课练习为条件；口语按完成跟读或对话练习记录解锁，并非自动验证发音达标。
+
+旧完成记录保留，但不会因此跳过其他未完成的前置课程；更新前已保存的未完成练习仍可继续。词典查询、收藏及单词学习保持可用。
+
+## 声音与网络
+
+默认声音为 Jenny 美式女声，可切换 Sonia 英式女声或设备声音。
+
+自然语音通过 `edge-tts` 在线生成。进入有听音按钮的题目后，会提前准备正常和慢速语音；预加载与点击播放共用请求，生成结果保存在 `audio-cache/`，页面也缓存近期音频。
+
+首次生成仍可能需要等待网络。等待时显示“声音准备中”，实际发声后显示“播放中”。自然语音失败时会提示，不会自动换成设备声音；可在设置中自行切换。
+
+自然语音请求发送朗读文字和语音参数，不发送学习进度或麦克风录音。设备声音是否可离线使用，取决于系统是否安装了对应英语声音。
+
+## 保存与备份
+
+学习进度、未完成练习、阅读答题记录和生词收藏保存在当前浏览器的 `localStorage` 中。项目没有账号、云端同步或跨设备自动恢复。
+
+在“学习设置”中可以导出 JSON 备份，再在另一浏览器或设备导入。恢复前会显示确认信息，并尝试备份原记录。
+
+请固定使用同一浏览器和访问地址。`localhost` 与 `127.0.0.1`、不同端口使用不同的浏览器存储；换地址后看不到旧进度，不一定是数据被删除。清理网站数据或使用无痕窗口也可能导致进度不再保留。
+
+## 项目结构
+
+| 文件或目录 | 用途 |
+| --- | --- |
+| `index.html`、`styles.css` | 页面结构与样式 |
+| `app.js` | 学习流程、交互、记录和阶段解锁 |
+| `model.mjs` | 进度校验、复习调度与学习规则 |
+| `curriculum.js` | 单词主题、语法、口语、阅读和听力内容 |
+| `audio-cache.mjs` | 前端语音缓存与请求复用 |
+| `server.py` | 本地静态资源、词典和语音接口 |
+| `launch.py` | 环境初始化与启动入口 |
+| `scripts/` | 词典导入与考试词库生成脚本 |
+| `data/` | 词库、清单、来源许可证和本地词典数据库 |
+| `tests/` | 单元测试与浏览器测试 |
+
+`.venv/`、`audio-cache/`、原始 `data/ecdict.csv` 和 `data/dictionary.sqlite3` 已列入 `.gitignore`；首次启动可生成缺少的运行环境和词典文件。服务只绑定本机 `127.0.0.1`，当前不是面向公网的多用户部署方案。
+
+## 开发验证
+
+在项目目录运行模型、缓存及后端测试：
+
+```bash
+node --test tests/model.test.mjs tests/audio-cache.test.mjs
+python3 -m unittest discover -s tests -p 'test_*.py'
+```
+
+浏览器测试需要先启动网站，并安装 Google Chrome 和支持内置 `WebSocket` 的 Node.js：
+
+```bash
+# 终端一：运行网站
+python3 launch.py --no-browser
+
+# 终端二：运行浏览器测试
+node tests/browser.cjs
+```
+
+浏览器测试默认访问 `http://127.0.0.1:5173`，使用独立的临时 Chrome 配置，不修改日常浏览器的学习记录。默认 Chrome 路径适用于 macOS；其他安装位置可通过 `CHROME_PATH` 环境变量指定。测试会请求语音接口，未缓存的音频需要联网。
+
+## 常见问题
+
+- **首次启动较慢**：正在安装依赖或下载词典，查看终端进度并保持联网。
+- **双击 macOS 启动脚本提示没有执行权限**：在项目目录执行 `chmod +x 启动英语学习.command`，或直接运行 `python3 launch.py`。
+- **语音一直在准备**：首次合成依赖网络；稍后重试，或在设置中选择设备声音。
+- **词典不可用**：确认通过 `launch.py` 启动，查看终端的下载或导入错误。
+- **课程无法点击**：查看卡片上的前置课程提示，完成后会自动解锁。
+- **更新页面未生效**：刷新浏览器；修改 Python 服务代码后，需要停止并重新启动服务。
+
+## 数据来源与题型参考
+
+- [ECDICT](https://github.com/skywind3000/ECDICT)：词典与考试标签来源，数据许可证见 [ECDICT-LICENSE.txt](data/ECDICT-LICENSE.txt)。各考试词库存在重叠，不代表最新官方考试大纲；常用词筛选也不是官方 CEFR 分级。
+- [edge-tts](https://github.com/rany2/edge-tts)：自然语音组件。
+- [IELTS 官方阅读题型](https://ielts.org/take-a-test/test-types/ielts-academic-test/ielts-academic-format-reading)、[IELTS 官方样题](https://www.ielts.org/take-a-test/preparation-resources/sample-test-questions/academic-test)：阅读题型参考与扩展练习入口。
+- [Cambridge B2 First 官方阅读练习](https://www.cambridgeenglish.org/Images/180429-cambridge-english-b2-first-reading-part-5.pdf)：阅读训练目标参考。
+
+本站原创内容和站内阶段不等同于官方真题、标准化考试或提分保证。
