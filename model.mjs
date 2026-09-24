@@ -23,15 +23,21 @@ export function letterGap(word) {
   const positions = word.length < 7 ? [Math.floor(word.length / 2)] : [Math.floor(word.length / 3), Math.floor(word.length * 2 / 3)];
   return {masked: [...word].map((letter,index)=>positions.includes(index)?'_':letter).join(''), answer:positions.map(index=>word[index]).join('')};
 }
-export function letterStages(word) {
+export function letterStages(word,random=Math.random) {
   if (!/^[a-z]{2,}$/i.test(word)) return [];
-  const middle=Math.floor(word.length/2);
-  const plans=[['one','补 1 个字母',[middle]],['two','补 2 个字母',[Math.max(0,middle-1),middle]],['alternate','隔一个字母填一个',[...word].map((_,i)=>i).filter(i=>i%2===0)]];
-  const stages=[];
-  for(const [level,label,positions] of plans){
-    const hidden=[...new Set(positions)].sort((a,b)=>a-b);
-    if(hidden.length>=word.length || hidden.length<=(stages.at(-1)?.answer.length||0))continue;
-    stages.push({level,label,masked:[...word].map((c,i)=>hidden.includes(i)?'_':c).join(''),answer:hidden.map(i=>word[i]).join('')});
+  // Sample within length-scaled bands, then choose positions without replacement.
+  // Generate once when creating the lesson; saved masks survive retries and reloads.
+  const stages=[],bands=[[.15,.25],[.35,.45],[.6,.75]];
+  for(const [low,high] of bands){
+    const previous=stages.at(-1)?.answer.length||0;
+    const min=Math.max(previous+1,Math.floor(word.length*low),1);
+    const max=Math.min(word.length-1,Math.max(min,Math.floor(word.length*high)));
+    if(min>max)break;
+    const count=min+Math.floor(random()*(max-min+1));
+    const positions=Array.from({length:word.length},(_,i)=>i);
+    for(let i=positions.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[positions[i],positions[j]]=[positions[j],positions[i]];}
+    const hidden=positions.slice(0,count).sort((a,b)=>a-b);
+    stages.push({level:`random-${stages.length+1}`,label:`补 ${count} 个字母`,masked:[...word].map((c,i)=>hidden.includes(i)?'_':c).join(''),answer:hidden.map(i=>word[i]).join('')});
   }
   return stages;
 }
@@ -60,7 +66,7 @@ export function phoneticLabel(value) {
 export const collections = [{id:'general',name:'零基础与常用词'},{id:'starter',name:'零基础 150 词'},{id:'core',name:'常用 6000 词'},{id:'cet4',name:'大学英语四级'},{id:'cet6',name:'大学英语六级'},{id:'zk',name:'中考英语'},{id:'gk',name:'高考英语'},{id:'ky',name:'考研英语'},{id:'ielts',name:'雅思 IELTS'},{id:'toefl',name:'托福 TOEFL'},{id:'gre',name:'GRE'},{id:'all',name:'全部学习词库'}];
 export function collectionWords(words,id) {return id==='all'?words:words.filter(w=>w.collections?.includes(id));}
 export function wordStatus(card,today=dayKey()) {return !card?'new':card.mistakes>0?'mistakes':card.due<=today?'due':memoryVerified(card)?'stable':'learned';}
-export function freshState() { return {version:2,cards:Object.create(null),dates:[],reviews:0,grammar:[],scenes:[],listenings:[],alphabet:[],custom:[],readingWords:[],readingProgress:{},settings:{daily:5,voice:'jenny',collection:'general'},session:null}; }
+export function freshState() { return {version:2,cards:Object.create(null),dates:[],reviews:0,grammar:[],scenes:[],listenings:[],alphabet:[],custom:[],readingWords:[],readingProgress:{},settings:{daily:5,dictationDelay:2,voice:'jenny',collection:'general'},session:null}; }
 const isDay = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T12:00:00`));
 export function validateState(raw) {
   if (!raw || raw.version !== 2 || typeof raw.cards !== 'object' || Array.isArray(raw.cards) || !raw.cards) throw Error('不是有效的一点英语备份。');
@@ -76,6 +82,7 @@ export function validateState(raw) {
   result.readingWords=(Array.isArray(raw.readingWords)?raw.readingWords:[]).filter(w=>w&&/^[a-z][a-z '\-]{0,79}$/i.test(w.word)&&typeof w.meaning==='string').slice(0,10000).map(w=>({word:w.word,meaning:w.meaning.slice(0,10000),phonetic:typeof w.phonetic==='string'?w.phonetic:'',sources:[...new Set((Array.isArray(w.sources)?w.sources:[]).filter(id=>/^read-\d+$/.test(id)))],added:isDay(w.added)?w.added:dayKey()}));
   for(const [id,progress] of Object.entries(raw.readingProgress||{}))if(/^read-\d+$/.test(id)&&progress&&Array.isArray(progress.answers))result.readingProgress[id]={answers:progress.answers.slice(0,20).map(value=>Number.isInteger(value)&&value>=0&&value<10?value:null),completed:isDay(progress.completed)?progress.completed:null};
   result.settings.daily = [5,10,15].includes(raw.settings?.daily)?raw.settings.daily:5;
+  result.settings.dictationDelay = [0,2,4].includes(raw.settings?.dictationDelay)?raw.settings.dictationDelay:2;
   result.settings.voice = ['jenny','sonia','device'].includes(raw.settings?.voice)?raw.settings.voice:'jenny';
   result.settings.collection = collections.some(c=>c.id===raw.settings?.collection)?raw.settings.collection:'general';
   // Active sessions contain generated steps; only local reads can opt into resuming them.
@@ -130,4 +137,13 @@ export function lessonAccess(items,completed,id){
  if(index<0)return {allowed:false,prerequisite:null};
  const prerequisite=ordered.slice(0,index).find(item=>!done.has(item.id));
  return {allowed:done.has(id)||!prerequisite,prerequisite:prerequisite||null};
+}
+
+export function structureExercises(word,entry){
+ if(!entry)return [];
+ const key=keyOf(word.word),steps=[];
+ if(entry.syllables){const count=entry.syllables.length;steps.push({type:'choice',key,soundWord:word.word,structurePractice:true,title:'听完整单词，有几个音节？',options:['1 个音节','2 个音节','3 个音节','4 个音节'],answer:`${count} 个音节`,explanation:`${word.word} 的常见完整读法有 ${count} 个音节。分块用于对应拼写，请连起来跟读。`},{type:'choice',key,soundWord:word.word,structurePractice:true,title:'再听一次，哪个音节读得最重？',options:entry.syllables.map((_,i)=>`第 ${i+1} 个音节`),answer:`第 ${entry.stress+1} 个音节`,explanation:`${word.word} 的主重音在第 ${entry.stress+1} 个音节，注意听完整单词中的轻重变化。`});}
+ const parts=entry.morphemes||entry.syllables;
+ if(parts?.join('').toLowerCase()===key){const index=parts.length-1;steps.push({type:'gap',key,structurePractice:true,title:entry.morphemes?'把构词部分补完整':'把最后一段拼写补完整',progression:'按块练习 · 下一步逐渐撤掉提示',word:word.word,meaning:word.meaning,masked:parts.map((p,i)=>i===index?'_'.repeat(p.length):p).join(''),answer:parts[index]});}
+ return steps;
 }

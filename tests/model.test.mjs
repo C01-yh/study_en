@@ -49,10 +49,23 @@ test('letter stages progressively hide more letters and never remove all context
   for(const stage of stages){let index=0;assert(stage.answer.length>previous);assert(stage.answer.length<word.length);assert.equal(stage.masked.replace(/_/g,()=>stage.answer[index++]),word);previous=stage.answer.length;}
   assert.equal(new Set(stages.map(s=>s.masked)).size,stages.length);
  }
- assert.deepEqual(letterStages('please').map(s=>s.answer.length),[1,2,3]);
- assert.deepEqual(letterStages('water').map(s=>s.masked),['wa_er','w__er','_a_e_']);
+ assert.deepEqual(letterStages('please',()=>0).map(s=>s.answer.length),[1,2,3]);
+ assert.notDeepEqual(letterStages('water',()=>0).map(s=>s.masked),letterStages('water',()=>.999).map(s=>s.masked));
  assert.equal(letterStages('am').length,1);assert.equal(letterStages('I').length,0);
  assert.equal(letterStages('ice cream').length,0);
+});
+test('random gaps vary counts and positions while preserving ordered answers across word lengths',()=>{
+ let seed=42;const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
+ const masks=new Set(),counts=new Set(),covered=new Set();
+ for(let run=0;run<100;run++){
+  for(let length=2;length<=30;length++){
+   const word='abcdefghijklmnopqrstuvwxyzabcd'.slice(0,length),stages=letterStages(word,random);let previous=0;
+   assert.equal(stages.length,Math.min(3,length-1));
+   for(const step of stages){let i=0;assert.equal(step.masked.replace(/_/g,()=>step.answer[i++]),word);assert(step.answer.length>previous&&step.answer.length<length);assert.equal(step.label,`补 ${step.answer.length} 个字母`);previous=step.answer.length;}
+   if(length===12){masks.add(stages[0].masked);counts.add(stages.map(s=>s.answer.length).join(','));[...stages[0].masked].forEach((c,i)=>{if(c==='_')covered.add(i);});}
+  }
+ }
+ assert(masks.size>10);assert(counts.size>1);assert.equal(covered.size,12);
 });
 test('sentence stages preserve punctuation, contractions and visible context',()=>{
  for(const sentence of ['I want water.','Hello, Sam!','I don’t like coffee.','This is a well-known book.']){
@@ -147,4 +160,19 @@ test('expanded readings add balanced original skill practice with explanations',
  assert.equal(readings.reduce((n,item)=>n+item.questions.length,0),86);
  assert(new Set(added.flatMap(item=>item.questions.map(q=>q.skill))).size>=10);
  for(const item of added)for(const q of item.questions){assert(q.skill&&q.evidence&&q.explanation);assert(q.options[q.answer]);assert.equal(new Set(q.options).size,q.options.length);}
+});
+
+test('curated word structures preserve spelling and separate morphology from syllables',async()=>{
+ const {wordStructures}=await import('../curriculum.js');const {structureExercises}=await import('../model.mjs');
+ assert.equal(Object.keys(wordStructures).length,17);assert.equal(Object.values(wordStructures).filter(entry=>entry.syllables).length,7);
+ for(const [word,entry] of Object.entries(wordStructures)){for(const parts of [entry.morphemes,entry.syllables].filter(Boolean))assert.equal(parts.join(''),word);if(entry.syllables)assert(entry.stress>=0&&entry.stress<entry.syllables.length);
+  const steps=structureExercises({word,meaning:'释义'},entry);for(const step of steps){if(step.type==='gap'){let i=0;assert.equal(step.masked.replace(/_/g,()=>step.answer[i++]),word);}else{assert(step.options.includes(step.answer));assert.equal(step.soundWord,word);}}
+ }
+ assert.deepEqual(wordStructures.government.morphemes,['govern','ment']);assert.equal(wordStructures.government.syllables,undefined);assert.deepEqual(structureExercises({word:'unknown'},undefined),[]);
+});
+
+test('dictation recap settings default safely and survive backup validation',()=>{
+ assert.equal(freshState().settings.dictationDelay,2);
+ for(const seconds of [0,2,4]){const s=freshState();s.settings.dictationDelay=seconds;assert.equal(validateState(s).settings.dictationDelay,seconds);}
+ for(const value of [undefined,null,'4',-1,99]){const s=freshState();s.settings.dictationDelay=value;assert.equal(validateState(s).settings.dictationDelay,2);}
 });

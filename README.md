@@ -56,13 +56,28 @@ python3 launch.py --port 5174
 
 - 每日新词目标可选 5、10 或 15 个，先安排到期复习词。
 - 新词按“认识 → 选择词义 → 补字母 → 完整拼写 → 听写”练习；一轮中有多个新词时，后面的听写与前面的学习之间隔着其他词。
+- 补字母按词长从少量到较多空缺递进，随机选择数量与位置，不固定挖中间或隔一个挖一个。短词减少轮数，至少保留一个提示字母；重新开始学习会重新抽取，错后重试及刷新续学保留原题。
 - 一个字母一条横线，空格与标点自动提供。入门练习逐字母判断；独立复习填完整个词后自动判断，不需要点击提交。
-- 正确字母保留，错误字母标橙并选中；整题正确后自动进入下一题。
+- 正确字母保留，错误字母标橙并选中；普通拼写整题正确后自动进入下一题。
+- 听写完成后保留英文并显示中文，默认 2 秒后进入下一题；设置中可选 4 秒或手动切换。可以立即点击“下一题”或“停留查看”，重听发音、切到后台时也会暂停跳转。刷新续学保留已填答案及手动停留状态，不重复计分。
 - 听写默认不显示中文，答错后才显示中文提示。
 - 反复出错时可以查看字母提示，也可以主动查看完整答案。收起答案后重新练习，并安排稍后再回忆一次。
 - 记录跨天独立通过、使用提示、查看答案和纠错情况。同一天重复答对不增加跨天通过次数。
 - 在 3 个不同的后续学习日独立通过后，标记为“跨天独立记住”；这不代表永久掌握，仍需复习。
 - 新词或答错后通常次日复习，独立通过后按 3、7、14、30 天推进；有帮助的练习不会延长复习间隔。
+
+### 长词拆分与音节练习
+
+认识新词时，已配置的长词保持连续显示，用不同颜色区分内部片段，不插入空格。例如 `government` 按 `govern` 与 `ment` 显示构词提示；构词分块不等同于音节划分。
+
+- 可切换“构词记忆”“音节与重音”和“完整单词”，仅显示该词已配置的选项。
+- 音节视图用下划线标出主重音。音频始终朗读完整单词，不把拼写片段分别读出。
+- 支持的词会加入听音判断音节数量、判断主重音位置，以及按块补全练习，再进入原有逐步拼写与独立听写流程。
+- 独立听写不提供分色或拆分提示；答题继续使用自动判断、错误重填和答对跳题。
+
+目前人工配置 **17 个词**：11 个有构词提示、7 个有音节与重音信息（`teacher` 同时具备两类）。未配置的词保持原有显示，不自动猜测拆分。新增题目用于新开始的学习；已经保存的未完成练习保留原题目顺序。
+
+词库不等于“所有英语单词”：入门、常用与考试词库合并去重后当前有 **15,701 个学习词条**，完整词典另有 **770,611 个查询词条**，不包括用户自行添加的词。
 
 ### 阅读、查词与生词本
 
@@ -159,6 +174,7 @@ node tests/browser.cjs
 
 - [ECDICT](https://github.com/skywind3000/ECDICT)：词典与考试标签来源，数据许可证见 [ECDICT-LICENSE.txt](data/ECDICT-LICENSE.txt)。各考试词库存在重叠，不代表最新官方考试大纲；常用词筛选也不是官方 CEFR 分级。
 - [edge-tts](https://github.com/rany2/edge-tts)：自然语音组件。
+- [Cambridge 构词后缀说明](https://dictionary.cambridge.org/uk/grammar/british-grammar/suffixes)：构词提示参考；[beautiful](https://dictionary.cambridge.org/us/pronunciation/english/beautiful)、[remember](https://dictionary.cambridge.org/pronunciation/english/remember)、[tomorrow](https://dictionary.cambridge.org/us/pronunciation/english/tomorrow) 等发音条目用于核对音节与重音。
 - [IELTS 官方阅读题型](https://ielts.org/take-a-test/test-types/ielts-academic-test/ielts-academic-format-reading)、[IELTS 官方样题](https://www.ielts.org/take-a-test/preparation-resources/sample-test-questions/academic-test)：阅读题型参考与扩展练习入口。
 - [Cambridge B2 First 官方阅读练习](https://www.cambridgeenglish.org/Images/180429-cambridge-english-b2-first-reading-part-5.pdf)：阅读训练目标参考。
 

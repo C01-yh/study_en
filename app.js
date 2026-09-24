@@ -1,10 +1,10 @@
 import {createAudioCache} from './audio-cache.mjs';
-import {topics,grammar,scenes,readings,studyLevels,listeningLessons} from './curriculum.js';
-import {STORAGE_KEY,dayKey,keyOf,normalize,freshState,validateState,migrateV1,scheduleCard,orderedLessons,lessonAccess,scheduleMemoryCard,memoryVerified,memoryLessonSteps,dueWords,newWords,learnedToday,letterStages,sentenceStages,phoneticLabel,collections,collectionWords,wordStatus,gradeBlanks,blankLayout} from './model.mjs';
+import {topics,grammar,scenes,readings,studyLevels,listeningLessons,wordStructures} from './curriculum.js';
+import {STORAGE_KEY,dayKey,keyOf,normalize,freshState,validateState,migrateV1,scheduleCard,structureExercises,orderedLessons,lessonAccess,scheduleMemoryCard,memoryVerified,memoryLessonSteps,dueWords,newWords,learnedToday,letterStages,sentenceStages,phoneticLabel,collections,collectionWords,wordStatus,gradeBlanks,blankLayout} from './model.mjs';
 const $=s=>document.querySelector(s),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),fmt=v=>Number(v).toLocaleString('zh-CN');
 const meaning=w=>w.meaning.split('\n')[0].slice(0,130);
 let state=freshState(),words=[],wordMap=new Map(),manifest={},loaded=false,storageAvailable=true;
-let session=null,answered=false,attempted=false,toastTimer,wordPage=1,coursePage=1,dictPage=1,dictItems=[],dictRequest=0,libraryPage=1,recentlyLearned=new Set();
+let session=null,answered=false,attempted=false,toastTimer,dictationTimer,wordPage=1,coursePage=1,dictPage=1,dictItems=[],dictRequest=0,libraryPage=1,recentlyLearned=new Set();
 function validSession(s){return s&&['words','grammar','speaking','alphabet','listening'].includes(s.kind)&&typeof s.title==='string'&&Array.isArray(s.steps)&&s.steps.length>0&&s.steps.length<400&&Number.isInteger(s.index)&&s.index>=0&&s.index<s.steps.length&&Array.isArray(s.wordKeys)&&Array.isArray(s.wrong)&&Number.isInteger(s.firstTry)&&s.steps.every(x=>x&&['learn','choice','gap','sentence-gap','spell','listen','explain','speak','letter'].includes(x.type)&&(typeof x.answer==='string'||['learn','explain','speak','letter'].includes(x.type))&&(x.type!=='choice'||Array.isArray(x.options)));}
 try{const raw=JSON.parse(localStorage.getItem(STORAGE_KEY)||'null');if(raw){state=validateState(raw);if(validSession(raw.session))state.session=raw.session;}else state=migrateV1(JSON.parse(localStorage.getItem('a-little-english-v1')||'null'));}catch{storageAvailable=false;}
 function toast(text){$('#toast').textContent=text;$('#toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').hidden=true,6500);}
@@ -18,7 +18,7 @@ function prepareLessonAudio(){
 }
 function stopSpeech(){speechId++;if(audio){audio.onplaying=null;audio.onended=null;audio.onerror=null;audio.pause();audio.src='';audio=null;}if(audioUrl){URL.revokeObjectURL(audioUrl);audioUrl=null;}if('speechSynthesis'in window)speechSynthesis.cancel();document.querySelectorAll('[data-speak]').forEach(b=>{b.classList.remove('playing','audio-loading');b.removeAttribute('aria-busy');});}
 async function speak(text,speed='slow',button=null){
- stopSpeech();const id=speechId;button?.classList.add('audio-loading');button?.setAttribute('aria-busy','true');const clear=()=>{if(id===speechId){button?.classList.remove('playing','audio-loading');button?.removeAttribute('aria-busy');}};
+ pauseDictationReview();stopSpeech();const id=speechId;button?.classList.add('audio-loading');button?.setAttribute('aria-busy','true');const clear=()=>{if(id===speechId){button?.classList.remove('playing','audio-loading');button?.removeAttribute('aria-busy');}};
  const playing=()=>{if(id===speechId){button?.classList.remove('audio-loading');button?.classList.add('playing');button?.removeAttribute('aria-busy');}};
  if(state.settings.voice==='device'){
   if(!('speechSynthesis'in window)){clear();return toast('当前浏览器不支持设备朗读，请选择自然女声。');}
@@ -51,7 +51,7 @@ function renderDashboard(){
  const d=new Date(),monday=new Date(d.getFullYear(),d.getMonth(),d.getDate()-((d.getDay()+6)%7));let week=0;
  $('#week-days').innerHTML=['一','二','三','四','五','六','日'].map((label,i)=>{const date=new Date(monday);date.setDate(date.getDate()+i);const key=dayKey(date),done=state.dates.includes(key);if(done)week++;return `<div class="day ${done?'done':''} ${key===dayKey()?'today':''}">${label}<i>${done?'✓':'·'}</i></div>`;}).join('');$('#week-total').textContent=`${week} / 7`;
  $('#library-summary').textContent=`完整词典 ${fmt(manifest.dictionaryCount||0)} 词条 · 常用词库 ${fmt(manifest.coreCount||0)} 词 · 30 个生活主题`;
- $('#voice-select').value=state.settings.voice;$('#settings-voice').value=state.settings.voice;$('#daily-target').value=state.settings.daily;
+ $('#voice-select').value=state.settings.voice;$('#settings-voice').value=state.settings.voice;$('#daily-target').value=state.settings.daily;$('#dictation-delay').value=state.settings.dictationDelay;
  $('#settings-stats').innerHTML=`<p>练过 <strong>${fmt(total)}</strong> 个词 · 到期 <strong>${dueWords(state,words).length}</strong> 个</p><p>语法 ${state.grammar.length} / ${grammar.length} 课 · 口语 ${state.scenes.length} / ${scenes.length} 场景</p><p>累计学习 ${state.dates.length} 天 · 字母 ${state.alphabet.length} / 26 个</p>`;
  $('#grammar-advice').textContent=total<20?'建议先认识一些生活用词，也可以现在开始第一节句子课。':`你已练过 ${total} 个词，可以配合语法课练习句子。课程不按词汇量强制锁定。`;
 }
@@ -99,7 +99,7 @@ $('#learn-collection').onclick=()=>{const pool=collectionWords(words,$('#collect
 function optionsFor(word){const answer=meaning(word),pool=[...new Set(words.filter(w=>keyOf(w.word)!==keyOf(word.word)).map(meaning))].filter(m=>m!==answer),offset=Math.floor(Math.random()*Math.max(1,pool.length-2));return [answer,...pool.slice(offset,offset+2)].sort(()=>Math.random()-.5);}
 function gapSteps(word){return letterStages(word.word).map((gap,index,all)=>({type:'gap',title:gap.label,level:gap.level,progression:`字母练习 ${index+1} / ${all.length} · 接下来完整拼写`,word:word.word,meaning:meaning(word),masked:gap.masked,answer:gap.answer,explanation:`缺少的字母是 ${gap.answer.split('').join('、')}。完整单词：${word.word}。再试一次。`,key:keyOf(word.word)}));}
 function sentenceExercises(sentence,translation){return [...sentenceStages(sentence).map((gap,index,all)=>({...gap,type:'sentence-gap',title:gap.label,progression:`句子练习 ${index+1} / ${all.length} · 接下来完整写句子`,sentence,translation,explanation:`缺少：${gap.answer}。完整句子：${sentence}`})),{type:'spell',title:translation,progression:'最后一步 · 独立写出完整句子',answer:sentence,explanation:`可以这样说：${sentence}`}];}
-function wordSteps(word,fresh){const key=keyOf(word.word),steps=[];if(fresh)steps.push({type:'learn',word:word.word,meaning:word.meaning,phonetic:word.phonetic||'',key});steps.push({type:'choice',title:`${word.word} 是什么意思？`,options:optionsFor(word),answer:meaning(word),explanation:`${word.word}：${meaning(word)}`,key},...gapSteps(word),{type:'spell',title:`写出英语：${meaning(word)}`,progression:'完整拼写 · 这次不再显示字母提示',answer:word.word,explanation:`这个词是 ${word.word}。看一遍，再试一次。`,key},{type:'listen',title:'听声音，写出这个词。',answer:word.word,explanation:`刚才读的是 ${word.word}，意思是：${meaning(word)}`,key});return steps;}
+function wordSteps(word,fresh){const key=keyOf(word.word),steps=[];if(fresh)steps.push({type:'learn',word:word.word,meaning:word.meaning,phonetic:word.phonetic||'',key});steps.push({type:'choice',title:`${word.word} 是什么意思？`,options:optionsFor(word),answer:meaning(word),explanation:`${word.word}：${meaning(word)}`,key},...structureExercises(word,wordStructures[key]),...gapSteps(word),{type:'spell',title:`写出英语：${meaning(word)}`,progression:'完整拼写 · 这次不再显示字母提示',answer:word.word,explanation:`这个词是 ${word.word}。看一遍，再试一次。`,key},{type:'listen',title:'听声音，写出这个词。',answer:word.word,explanation:`刚才读的是 ${word.word}，意思是：${meaning(word)}`,key});return steps;}
 function upgradePendingSession(){
  const saved=state.session;if(!saved||saved.progressionVersion===2||!['words','grammar'].includes(saved.kind))return;
  const completed=saved.steps.slice(0,saved.index),remaining=saved.steps.slice(saved.index),expanded=[];
@@ -147,7 +147,7 @@ function resumeSession(){session=structuredClone(state.session);renderStep();if(
 $('#start-lesson').onclick=()=>{if(state.session)return resumeSession();const p=plan();if(!p.review.length&&!p.fresh.length)return showView('speaking');startWords(p.review,p.fresh);};
 $('#review-due').onclick=()=>{const due=dueWords(state,words).slice(0,15);if(!due.length)return toast('现在没有到期单词，可以在单词本选择主动复习。');guardSession(()=>startWords(due,[],'到期复习'));};
 $('#alphabet-start').onclick=()=>guardSession(()=>begin({kind:'alphabet',id:'alphabet',title:'认识 26 个字母',wordKeys:[],steps:Array.from({length:26},(_,i)=>({type:'letter',word:String.fromCharCode(65+i),title:`字母 ${String.fromCharCode(65+i)}`}))}));
-$('#close-lesson').onclick=()=>dialog.close();dialog.addEventListener('close',()=>{if(dialog.open)return;stopSpeech();stopRecording();session=null;renderDashboard();});
+$('#close-lesson').onclick=()=>dialog.close();dialog.addEventListener('close',()=>{if(dialog.open)return;clearTimeout(dictationTimer);stopSpeech();stopRecording();session=null;renderDashboard();});
 // Measure fixed letter slots, so typing or checking answers never shifts the layout.
 function fitLessonWriting(){
  const line=dialog.querySelector('.letter-sentence');
@@ -172,6 +172,7 @@ function fitLessonWriting(){
 }
 window.addEventListener('resize',()=>requestAnimationFrame(fitLessonWriting));
 function renderStep(){
+ clearTimeout(dictationTimer);
  prepareLessonAudio();
  dialog.style.removeProperty('width');
  requestAnimationFrame(fitLessonWriting);
@@ -180,13 +181,14 @@ function renderStep(){
  let content=`${step.progression?`<p class="exercise-stage">${esc(step.progression)}</p>`:''}<h2 id="lesson-title">${esc(heading||'认识一个新朋友')}</h2>`;
  if(step.type==='learn'||step.type==='letter'){
   const phonetic=step.type==='learn'?phoneticLabel(wordMap.get(step.key||keyOf(step.word))?.phonetic||step.phonetic):'';
-  content+=`<p class="lesson-help">先听清楚，再跟着读。${step.type==='letter'?'左边是大写，右边是小写。':'不需要一次就记牢。'}</p><div class="learn-word"><h3>${esc(step.word)}${step.type==='letter'?` <span class="lowercase">${step.word.toLowerCase()}</span>`:''}</h3>${step.type==='learn'?`<p class="word-phonetic" lang="en">${esc(phonetic||'音标暂缺')}</p>`:''}<p class="definition word-meaning">${esc(step.meaning||'英语字母')}</p>${listening(step.word)}</div>`;
+  content+=`<p class="lesson-help">先听清楚，再跟着读。${step.type==='letter'?'左边是大写，右边是小写。':'不需要一次就记牢。'}</p><div class="learn-word"><h3 ${step.type==='learn'?'id="structured-word"':''}>${esc(step.word)}${step.type==='letter'?` <span class="lowercase">${step.word.toLowerCase()}</span>`:''}</h3>${step.type==='learn'?`<p class="word-phonetic" lang="en">${esc(phonetic||'音标暂缺')}</p>`:''}<p class="definition word-meaning">${esc(step.meaning||'英语字母')}</p>${listening(step.word)}${step.type==='learn'&&wordStructures[keyOf(step.word)]?'<div id="word-structure-guide"></div>':''}</div>`;
  }
  else if(step.type==='explain')content+=`<p class="grammar-explanation">${esc(step.text)}</p><div class="sentence-display">${esc(step.sentence)}</div>${step.translation?`<p>${esc(step.translation)}</p>`:''}${listening(step.sentence)}`;
  else if(step.type==='speak'&&step.partner)content+=`<p class="lesson-help">听对方说话，再根据中文意思自己回答。可以录音对照，不自动评分。</p><div class="sentence-display">${esc(step.partner)}</div>${listening(step.partner)}<p>轮到你：${esc(step.zh)}</p><details class="role-reference"><summary>查看参考表达</summary><div class="sentence-display">${esc(step.en)}</div>${listening(step.en)}</details><div class="recording-panel"><button class="button secondary" id="record-button">● 录下自己的回答</button><p id="record-status" role="status">说法可以不同，先试着表达。</p><audio id="record-playback" controls hidden></audio></div>`;
  else if(step.type==='speak')content+=`<p class="lesson-help">先听示范，然后自己说一次。录音只用于你自己对照。</p><div class="sentence-display">${esc(step.en)}</div><p>${esc(step.zh)}</p>${listening(step.en)}<div class="recording-panel"><button class="button secondary" id="record-button">● 录下自己说的</button><p id="record-status" role="status">需要麦克风权限；也可以不录音，直接跟读。</p><audio id="record-playback" controls hidden></audio><p class="quiet-note">不上传录音，不做自动发音评分。翻页后本段录音会清除。</p></div>`;
  else{
   content+=`<p class="lesson-help">${step.type==='listen'?(step.wholeAnswer?'先听声音，填完整个词后自动判断。答错会显示中文提示。':'先听声音，再逐个填写字母。标点已带上，无需输入。'):isFillStep(step)?'逐个填写字母，填对自动继续，橙色字母请重填。标点已带上。':'先试着回忆，答错会给你提示。'}</p>`;
+  if(step.soundWord)content+=`<div class="structure-listen-word">${esc(step.soundWord)}</div>${listening(step.soundWord)}`;
   if(step.audioText)content+=`<div class="audio-passage">${step.audioText.match(/[^.!?]+[.!?]?/g).map((part,i)=>`<p>第 ${i+1} 句</p>${listening(part.trim())}`).join('')}<details><summary>需要帮助？查看原文和中文</summary><p>${esc(step.audioText)}</p><p>${esc(step.translation)}</p></details></div>`;
   if(step.type==='choice')content+=`<div class="options">${step.options.map((option,i)=>`<button class="option" data-option="${i}"><span>${String.fromCharCode(65+i)}</span>${esc(option)}</button>`).join('')}</div>`;
   else if(isFillStep(step)){
@@ -201,7 +203,7 @@ function renderStep(){
  }
 
  const question=['choice','gap','sentence-gap','spell','listen'].includes(step.type);content+=`<div class="lesson-bottom"><span>可以随时退出，下次继续。</span><button class="button primary" id="next-step" ${question?'hidden':''}>${step.type==='speak'?'我练过了，继续':step.type==='letter'?'认识了，继续':'继续'} →</button></div>`;
- $('#lesson-content').innerHTML=`<div class="lesson-body"><div class="lesson-kicker">${session.kind.toUpperCase()} · ${session.index+1} / ${session.steps.length}</div>${content}</div>`;$('#next-step').onclick=nextStep;
+ $('#lesson-content').innerHTML=`<div class="lesson-body"><div class="lesson-kicker">${session.kind.toUpperCase()} · ${session.index+1} / ${session.steps.length}</div>${content}</div>`;$('#next-step').onclick=nextStep;if(step.type==='learn'&&wordStructures[keyOf(step.word)])renderWordStructure(step);
  document.querySelectorAll('[data-option]').forEach(b=>b.onclick=()=>checkAnswer(step.options[Number(b.dataset.option)],b));if(isFillStep(step))setupInlineBlanks(step);if($('#record-button'))$('#record-button').onclick=toggleRecording;dialog.scrollTop=0;if(dialog.open)($('.inline-blank:not([readonly])')||$('#answer-input')||$('.option')||$('#next-step'))?.focus();
 }
 function isFillStep(step){return ['gap','sentence-gap','spell','listen'].includes(step.type);}
@@ -229,7 +231,7 @@ function setupInlineBlanks(step){
   input.addEventListener('keydown',event=>{if(event.key==='Backspace'&&!input.value){[...inputs.slice(0,i)].reverse().find(x=>!x.readOnly)?.focus();}if(event.key==='ArrowRight'||event.key==='ArrowLeft'){const next=event.key==='ArrowRight'?inputs.slice(i+1).find(x=>!x.readOnly):[...inputs.slice(0,i)].reverse().find(x=>!x.readOnly);if(next){event.preventDefault();next.focus();next.select();}}});
   input.addEventListener('paste',event=>{if(input.readOnly)return;const text=event.clipboardData.getData('text'),parts=text.replace(/[^a-z]/gi,'').split('');if(!parts.length)return;event.preventDefault();const targets=inputs.slice(i).filter(x=>!x.readOnly);targets.forEach((target,j)=>{if(parts[j]===undefined)return;target.value=parts[j].slice(0,1);step.blankState.values[Number(target.dataset.blank)]=target.value;paintBlank(target,false);});checkInlineBlanks(i);});
  });
- if(locked.every(Boolean)){answered=true;const active=session;queueMicrotask(()=>{if(session===active&&session.steps[session.index]===step)nextStep();});}
+ if(locked.every(Boolean)){answered=true;const active=session;queueMicrotask(()=>{if(session===active&&session.steps[session.index]===step)completeWriting(step);});}
  else if(old?.submitted&&values.some((value,i)=>value&&!locked[i])){$('#feedback').hidden=false;$('#feedback').className='feedback retry';$('#feedback').textContent='橙色字母还不正确，请重新填写。';}
  renderAnswerHelp(step);
 }
@@ -249,7 +251,7 @@ function checkInlineBlanks(activeIndex=0){
  const feedback=$('#feedback');feedback.hidden=!result.wrong.some(Boolean);feedback.className='feedback retry';
  if(result.complete){
   answered=true;if(!draft.attempted&&!draft.counted)session.firstTry++;draft.counted=true;
-  return nextStep();
+  return completeWriting(step);
  }else{
   const wrongIndex=result.wrong.findIndex(Boolean);feedback.textContent=wrongIndex>=0?`第 ${wrongIndex+1} 个空缺字母再想一下，橙色位置可以直接重填。`:'';
   const target=!result.locked[activeIndex]?inputs[activeIndex]:inputs.slice(activeIndex+1).find(input=>!input.readOnly)||inputs.find(input=>!input.readOnly);
@@ -284,7 +286,33 @@ function checkAnswer(value,button){
  if(correct){answered=true;if(!attempted)session.firstTry++;return nextStep();}
  else{attempted=true;if(step.key&&!session.wrong.includes(step.key))session.wrong.push(step.key);feedback.textContent=step.explanation||`答案是 ${step.answer}。再试一次。`;button?.classList.add('wrong');if($('#answer-input')){$('#answer-input').setAttribute('aria-invalid','true');$('#answer-input').focus();$('#answer-input').select();}}
 }
-function nextStep(){stopSpeech();stopRecording();session.index++;if(session.index>=session.steps.length)return finishSession();state.session=structuredClone(session);save();renderStep();}
+function completeWriting(step){
+ if(step.type!=='listen')return nextStep();
+ clearTimeout(dictationTimer);persistBlankState();
+ $('.gap-card .word-meaning').hidden=false;
+ $('#feedback').hidden=true;
+ $('#lesson-title').textContent='回看词义';
+ $('.lesson-help').textContent='把声音、拼写和意思再联系一下。';
+ const delay=state.settings.dictationDelay;
+ $('#answer-help').innerHTML=`<div class="dictation-review"><p id="dictation-review-status" class="quiet-note" role="status"></p><button id="pause-dictation" class="text-button">停留查看</button></div>`;
+ const next=$('#next-step');next.hidden=false;next.textContent='下一题 →';
+ $('#pause-dictation').onclick=pauseDictationReview;
+ if(step.reviewPaused||delay===0||document.hidden){pauseDictationReview();}
+ else{
+  $('#dictation-review-status').textContent=`${delay} 秒后自动进入下一题`;
+  const active=session;
+  dictationTimer=setTimeout(()=>{if(session===active&&session.steps[session.index]===step&&dialog.open)nextStep();},delay*1000);
+ }
+ next.focus();
+}
+function pauseDictationReview(){
+ if(!session||!$('#dictation-review-status'))return;
+ clearTimeout(dictationTimer);session.steps[session.index].reviewPaused=true;persistBlankState();
+ $('#dictation-review-status').textContent='已停留，看完后点击“下一题”。';
+ $('#pause-dictation').hidden=true;
+}
+document.addEventListener('visibilitychange',()=>{if(document.hidden)pauseDictationReview();});
+function nextStep(){if(!session)return;clearTimeout(dictationTimer);stopSpeech();stopRecording();session.index++;if(session.index>=session.steps.length)return finishSession();state.session=structuredClone(session);save();renderStep();}
 function finishSession(){
  dialog.style.removeProperty('width');
  const done=session,today=dayKey();recentlyLearned=new Set(done.wordKeys.filter(key=>!state.cards[key]));if(done.kind==='words'){for(const key of done.wordKeys){const checks=done.steps.filter(step=>step.key===key&&step.wholeAnswer),evidence={independent:checks.some(step=>step.blankState?.counted&&!step.blankState.attempted),hinted:done.steps.some(step=>step.key===key&&(step.blankState?.hintUsed||step.type==='listen'&&step.blankState?.attempted)),answerViewed:done.steps.some(step=>step.key===key&&step.blankState?.answerViewed)};state.cards[key]=scheduleMemoryCard(state.cards[key],done.wrong.includes(key),evidence);}if(done.isReview)state.reviews++;}
@@ -300,6 +328,7 @@ async function toggleRecording(){
  if(recorder?.state==='recording'){recorder.stop();return;}if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder)return toast('当前浏览器不支持录音，可以直接跟读，或用较新的 Chrome 打开。');stopSpeech();stopRecording();const token=recordToken,button=$('#record-button');button.disabled=true;
  try{const stream=await navigator.mediaDevices.getUserMedia({audio:true});if(token!==recordToken){stream.getTracks().forEach(t=>t.stop());return;}recordStream=stream;recorder=new MediaRecorder(stream);const chunks=[],activeRecorder=recorder;recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data);};recorder.onstop=()=>{stream.getTracks().forEach(t=>t.stop());clearTimeout(recordTimer);if(token!==recordToken)return;recordUrl=URL.createObjectURL(new Blob(chunks,{type:activeRecorder.mimeType}));$('#record-playback').src=recordUrl;$('#record-playback').hidden=false;button.textContent='● 重新录一次';$('#record-status').textContent='录好了，播放听听自己的声音。';};recorder.start();button.textContent='■ 停止录音';$('#record-status').textContent='正在录音…最多 30 秒。';recordTimer=setTimeout(()=>{if(recorder?.state==='recording')recorder.stop();},30000);}catch{if(token===recordToken)toast('没有获得麦克风权限。你仍然可以听示范并跟读。');}finally{button.disabled=false;}
 }
+$('#dictation-delay').onchange=e=>{state.settings.dictationDelay=Number(e.target.value);save();};
 $('#daily-target').onchange=e=>{state.settings.daily=Number(e.target.value);save();renderDashboard();toast('每日目标已更新，已学记录保持不变。');};
 $('#export-progress').onclick=()=>{const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`一点英语-学习备份-${dayKey()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
 $('#import-progress').onchange=async e=>{
@@ -386,4 +415,15 @@ function refreshModuleLocks(name){
  }
  let progress=$(`#${name}-unlock-progress`);if(!progress){progress=document.createElement('p');progress.id=`${name}-unlock-progress`;progress.className='unlock-progress';root.before(progress);}
  const next=ordered.find(item=>!done.includes(item.id));progress.textContent=next?`按阶段依次学习 · 已完成 ${ordered.filter(item=>done.includes(item.id)).length}/${items.length} · 下一课：${next.level}「${next.title}」`:'本模块已全部完成，可以自由复习。';
+}
+
+function renderWordStructure(step,mode=step.structureMode){
+ const entry=wordStructures[keyOf(step.word)];if(!entry)return;
+ mode=mode||(entry.morphemes?'morphemes':'syllables');
+ const parts=mode==='plain'?null:entry[mode];
+ const title=$('#structured-word');title.classList.add('structured-word');title.setAttribute('aria-label',step.word);
+ title.innerHTML=parts?parts.map((part,i)=>`<span class="word-chunk chunk-${i%3} ${mode==='syllables'&&i===entry.stress?'stressed-chunk':''}" aria-hidden="true">${esc(step.word.slice(parts.slice(0,i).join('').length,parts.slice(0,i+1).join('').length))}</span>`).join(''):esc(step.word);
+ const note=mode==='morphemes'?entry.note:mode==='syllables'?`常见完整读法：${parts.length} 个音节，主重音在第 ${entry.stress+1} 个。下划线标重音；分色对应拼写，整词连读。`:'撤掉分色，试着记住完整单词。';
+ $('#word-structure-guide').innerHTML=`<div class="structure-modes" aria-label="单词显示方式">${[['morphemes','构词记忆'],['syllables','音节与重音'],['plain','完整单词']].filter(([key])=>key==='plain'||entry[key]).map(([key,label])=>`<button class="text-button" data-structure-mode="${key}" aria-pressed="${mode===key}">${label}</button>`).join('')}</div><p class="structure-note">${esc(note)}</p>`;
+ document.querySelectorAll('[data-structure-mode]').forEach(button=>button.onclick=()=>{step.structureMode=button.dataset.structureMode;persistBlankState();renderWordStructure(step,step.structureMode);document.querySelector(`[data-structure-mode="${step.structureMode}"]`)?.focus();});
 }

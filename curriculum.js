@@ -243,3 +243,24 @@ const readingPracticeExpansion=[
  ['信息判断','作者保证住房保障措施在任何情况下都有效。',['正确','错误','文中未提及'],1,'Their effectiveness would depend on implementation.','depends on implementation 是条件限制，与无条件保证相反。']]]
 ];
 readingPracticeExpansion.forEach(([level,title,focus,text,translation,rows])=>readings.push({id:`read-${readings.length+1}`,level,title,focus,text,translation,source:'原创专项练习 · 参考常见考试题型，非官方真题',questions:rows.map(([skill,prompt,options,answer,evidence,explanation])=>({skill,prompt,options,answer,evidence,explanation}))}));
+
+// Hand-curated teaching aids. Spelling chunks are visual guides, not standalone sounds.
+export const wordStructures={
+ government:{morphemes:['govern','ment'],note:'govern 表示治理；-ment 是构成名词的后缀。这里按构词分块，不表示只有两个音节。'},
+ development:{morphemes:['develop','ment'],note:'develop（发展）＋ -ment（名词后缀）。'},
+ agreement:{morphemes:['agree','ment'],note:'agree（同意）＋ -ment（名词后缀）。'},
+ enjoyment:{morphemes:['enjoy','ment'],note:'enjoy（享受）＋ -ment（名词后缀）。'},
+ helpful:{morphemes:['help','ful'],note:'help（帮助）＋ -ful（形容词后缀），表示有帮助的。'},
+ careful:{morphemes:['care','ful'],note:'care（留心）＋ -ful（形容词后缀），表示小心的。'},
+ careless:{morphemes:['care','less'],note:'care（留心）＋ -less（缺少），表示粗心的。'},
+ hopeless:{morphemes:['hope','less'],note:'hope（希望）＋ -less（缺少），表示无望的。'},
+ unhappy:{morphemes:['un','happy'],note:'un-（不）＋ happy（开心的）。'},
+ friendship:{morphemes:['friend','ship'],note:'friend（朋友）＋ -ship（表示关系等的名词后缀）；这里的 ship 不是“船”。'},
+ teacher:{morphemes:['teach','er'],note:'teach（教）＋ -er（做这件事的人）。',syllables:['teach','er'],stress:0},
+ banana:{syllables:['ba','na','na'],stress:1},
+ computer:{syllables:['com','pu','ter'],stress:1},
+ beautiful:{syllables:['beau','ti','ful'],stress:0},
+ remember:{syllables:['re','mem','ber'],stress:1},
+ tomorrow:{syllables:['to','mor','row'],stress:1},
+ information:{syllables:['in','for','ma','tion'],stress:2}
+};
